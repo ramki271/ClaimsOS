@@ -1,0 +1,53 @@
+{
+  "payer_name": "Apex Health Plan",
+  "tenant_key": "apex-health-plan",
+  "pack_name": "Apex Commercial PPO 500 Synthetic Policy Pack",
+  "version": "2026.03",
+  "documents": [
+    {
+      "policy_id": "APX-COM-500-EM-99213",
+      "title": "Outpatient Evaluation and Management Coverage",
+      "medical_logic_branch": ["Prof-Out", "Eval-Mgmt"],
+      "adjudication_weight": 86.5,
+      "ingestion_status": "Ready for Upload",
+      "classification": "POLICY_CORE",
+      "filename": "APX-COM-500-EM-99213.md"
+    },
+    {
+      "policy_id": "APX-POS-11-PROF-2026",
+      "title": "Professional Office Visit Place-of-Service Rule",
+      "medical_logic_branch": ["Prof-Out", "Site-Care"],
+      "adjudication_weight": 79.4,
+      "ingestion_status": "Ready for Upload",
+      "classification": "POLICY_CORE",
+      "filename": "APX-POS-11-PROF-2026.md"
+    },
+    {
+      "policy_id": "APX-NET-TIER1-PROF-2026",
+      "title": "Provider Network and Contract Tier Logic",
+      "medical_logic_branch": ["Network-Par", "Contract-Tier"],
+      "adjudication_weight": 73.2,
+      "ingestion_status": "Ready for Upload",
+      "classification": "PROVIDER_POLICY",
+      "filename": "APX-NET-TIER1-PROF-2026.md"
+    },
+    {
+      "policy_id": "APX-PRIORAUTH-ORTHO-2026",
+      "title": "Prior Authorization Rule for Orthopedic Surgical Services",
+      "medical_logic_branch": ["Prior-Auth", "Ortho-Surg"],
+      "adjudication_weight": 91.8,
+      "ingestion_status": "Ready for Upload",
+      "classification": "UTILIZATION_RULE",
+      "filename": "APX-PRIORAUTH-ORTHO-2026.md"
+    },
+    {
+      "policy_id": "APX-DUP-FREQ-2026",
+      "title": "Duplicate Billing and Frequency Guardrails",
+      "medical_logic_branch": ["Dup-Edit", "Claims-Integrity"],
+      "adjudication_weight": 68.7,
+      "ingestion_status": "Ready for Upload",
+      "classification": "INTEGRITY_RULE",
+      "filename": "APX-DUP-FREQ-2026.md"
+    }
+  ]
+}

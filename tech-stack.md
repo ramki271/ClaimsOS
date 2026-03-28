@@ -17,6 +17,17 @@
 - Supabase Storage
 - pgvector for embeddings and policy retrieval
 
+### Tenancy and Core Domain Shape
+- Payers are the primary tenant boundary
+- Each tenant owns its own:
+  - claims
+  - policies
+  - plans
+  - members
+  - providers
+  - audit logs
+- Providers are tenant-scoped records for MVP, not global system tenants
+
 ### AI and Retrieval
 - OpenAI or Anthropic API through the FastAPI backend
 - RAG using policy documents stored in Supabase Storage and embeddings stored in Postgres via pgvector
@@ -28,6 +39,7 @@
   - policy retrieval
   - adjudication
   - confidence scoring
+  - provider lookup and network validation
 
 ### Logging and Auditability
 - Structured application logs
@@ -71,6 +83,9 @@ This preserves the modular agent-driven design from the MVP doc without adding o
 
 ## Initial Database Entities
 
+- `tenants`
+- `payer_organizations`
+- `providers`
 - `claims`
 - `claim_validation_results`
 - `policy_documents`
@@ -87,5 +102,6 @@ For the first build, use:
 - Supabase Postgres + Storage for persistence
 - pgvector for RAG
 - No Redis in phase 1
+- Tenant-scoped provider modeling for MVP
 
 Add Redis only when asynchronous processing, caching, or queueing becomes necessary.
