@@ -330,7 +330,7 @@ function MemberDetailView({
               <span className="text-[#0053dc]">{member.member_id}</span>
             </button>
             <h1 className="text-2xl font-extrabold tracking-tight text-[#2a3439]">
-              Member Detail — Clinical Hotspots
+              Member Intelligence
             </h1>
           </div>
           <div className="flex gap-2 shrink-0">
@@ -344,120 +344,27 @@ function MemberDetailView({
         </div>
 
         <div className="px-6 pb-8 space-y-5">
-          {/* Top grid: Clinical Viz + Member Profile */}
+          {/* Row 1: Member context (3 columns) */}
           <div className="grid grid-cols-12 gap-5">
-            {/* Clinical Visualization */}
-            <section className="col-span-12 xl:col-span-8 bg-white rounded-sm border border-[rgba(169,180,185,0.1)] shadow-[0_2px_12px_rgba(15,23,42,0.06)] overflow-hidden flex flex-col min-h-[480px]">
-              <div className="px-5 py-4 border-b border-[#f0f4f7] flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-[#2a3439]">Clinical Visualization</h2>
-                  <p className="text-[11px] text-[#566166]">Spatial Analysis of Pathological Indicators</p>
-                </div>
-                <div className="flex bg-[#f0f4f7] p-1 rounded-sm gap-0.5">
-                  {["Frontal", "Posterior", "Lateral"].map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setActiveView(v.toLowerCase())}
-                      className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-sm transition-all ${
-                        activeView === v.toLowerCase() ? "bg-white text-[#0053dc] shadow-sm" : "text-[#566166] hover:text-[#2a3439]"
-                      }`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex-1 grid grid-cols-5">
-                {/* Dark silhouette */}
-                <div className="col-span-3 bg-[#0F172A] overflow-hidden flex items-center justify-center py-8">
-                  <div className="relative h-full">
-                    <BodySilhouette />
-                    {clinical_hotspots.map((h) => <HotspotPin key={h.id} hotspot={h} />)}
-                    {clinical_hotspots.length === 0 && (
-                      <div className="absolute inset-0 flex items-end justify-center pb-6">
-                        <p className="text-[10px] text-slate-500 uppercase tracking-widest">No hotspots recorded</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Anatomical legend + confidence */}
-                <div className="col-span-2 p-5 overflow-y-auto bg-[#f7f9fb] flex flex-col">
-                  <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-[#2a3439] mb-4">
-                    Anatomical Legend
-                  </h3>
-                  <div className="space-y-3 flex-1">
-                    {clinical_hotspots.map((h, i) => (
-                      <div key={h.id} className="group cursor-pointer">
-                        <div className="flex items-start gap-3 p-3 rounded-sm bg-white border-l-4 border-[#c94b41] shadow-sm group-hover:shadow-md transition-all">
-                          <div className="mt-0.5 w-6 h-6 shrink-0 rounded-sm bg-red-50 flex items-center justify-center text-[#c94b41] font-bold text-[10px]">
-                            {String(i + 1).padStart(2, "0")}
-                          </div>
-                          <div className="min-w-0">
-                            <h4 className="text-xs font-bold text-[#2a3439]">{h.body_location}</h4>
-                            <p className="text-[10px] text-[#566166] font-medium mt-0.5 leading-snug">{h.description}</p>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              <span className="text-[9px] px-1.5 py-0.5 bg-[#e8eff3] border border-[rgba(169,180,185,0.2)] rounded-sm uppercase font-bold text-[#566166]">
-                                {h.icd_code}
-                              </span>
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded-sm uppercase font-bold border ${
-                                h.risk_level === "high_risk" ? "bg-red-50 border-red-200 text-[#c94b41]"
-                                : h.risk_level === "active_claim" ? "bg-[#eef4ff] border-[#0053dc]/20 text-[#0053dc]"
-                                : "bg-amber-50 border-amber-200 text-amber-700"
-                              }`}>
-                                {h.risk_level.replace(/_/g, " ")}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="border border-dashed border-[rgba(169,180,185,0.35)] rounded-sm p-3 flex items-center justify-center">
-                      <p className="text-[10px] text-[#566166] italic">Add secondary observation…</p>
-                    </div>
-                  </div>
-
-                  {diagnostic_confidence > 0 && (
-                    <div className="mt-5 pt-4 border-t border-[#e8eff3]">
-                      <h4 className="text-[10px] font-bold uppercase tracking-widest text-[#566166] mb-2.5">
-                        Diagnostic Confidence
-                      </h4>
-                      <div className="w-full bg-[#e8eff3] h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-[#0053dc] h-full rounded-full" style={{ width: `${diagnostic_confidence}%` }} />
-                      </div>
-                      <div className="flex justify-between mt-1.5">
-                        <span className="text-[9px] font-bold text-[#566166] uppercase tracking-wider">Clinical Match</span>
-                        <span className="text-[9px] font-bold text-[#0053dc]">{diagnostic_confidence.toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            {/* Member Profile + Policy + Actions */}
-            <aside className="col-span-12 xl:col-span-4 space-y-4">
-              {/* Mini profile */}
+            {/* Member profile + plan summary */}
+            <aside className="col-span-12 xl:col-span-5 space-y-4">
+              {/* Member profile + plan summary */}
               <div className="bg-white rounded-sm border border-[rgba(169,180,185,0.1)] shadow-[0_2px_12px_rgba(15,23,42,0.06)] p-5">
-                <div className="flex items-center gap-4 mb-5">
+                <div className="flex items-center gap-4 mb-4">
                   <div className="h-14 w-14 shrink-0 rounded-sm bg-[#e8eff3] flex items-center justify-center">
                     <span className="material-symbols-outlined text-4xl text-[#a9b4b9]" style={{ fontVariationSettings: "'FILL' 1" }}>person</span>
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-base font-bold text-[#2a3439] truncate">{member.member_name}</h3>
-                    <p className="text-[11px] text-[#566166]">
-                      DOB: {member.date_of_birth} (Age {calculateAge(member.date_of_birth)})
-                    </p>
-                    {plan_tier && (
-                      <p className="text-[11px] font-bold text-[#0053dc] mt-0.5">{plan_tier}</p>
-                    )}
+                    <p className="text-[11px] text-[#566166]">DOB: {member.date_of_birth} (Age {calculateAge(member.date_of_birth)})</p>
+                    {plan_tier && <p className="text-[11px] font-bold text-[#0053dc] mt-0.5">{plan_tier}</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#f0f4f7]">
+
+                {/* Eligibility + deductible */}
+                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-[#f0f4f7]">
                   <div>
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Policy Status</p>
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Eligibility</p>
                     <span className={`text-xs font-bold ${eligBg}`}>{eligLabel}</span>
                   </div>
                   {deductible_met && (
@@ -467,14 +374,113 @@ function MemberDetailView({
                     </div>
                   )}
                 </div>
+
+                {/* Coverage window */}
+                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-[#f0f4f7]">
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Effective</p>
+                    <span className="text-xs font-bold text-[#2a3439]">{member.effective_date}</span>
+                  </div>
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Terminates</p>
+                    <span className="text-xs font-bold text-[#2a3439]">{member.termination_date ?? "—"}</span>
+                  </div>
+                </div>
+
+                {/* Plan + payer context */}
+                <div className="mt-3 pt-3 border-t border-[#f0f4f7] space-y-2">
+                  <div className="flex justify-between items-start">
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Payer</p>
+                    <p className="text-[10px] font-bold text-[#2a3439] text-right max-w-[60%] truncate">{member.payer_name}</p>
+                  </div>
+                  <div className="flex justify-between items-start">
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Plan</p>
+                    <p className="text-[10px] font-bold text-[#2a3439] text-right max-w-[60%] truncate">{member.plan_name}</p>
+                  </div>
+                  <div className="flex justify-between items-start">
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Coverage</p>
+                    <p className="text-[10px] font-bold text-[#2a3439] text-right">{coverageTypeLabel(member.coverage_type)}</p>
+                  </div>
+                  <div className="flex justify-between items-start">
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Subscriber Role</p>
+                    <p className="text-[10px] font-bold text-[#2a3439] text-right capitalize">{member.relationship_to_subscriber}</p>
+                  </div>
+                </div>
+
+                {/* Auth requirements */}
+                <div className="mt-3 pt-3 border-t border-[#f0f4f7] space-y-2">
+                  {member.pcp_name && (
+                    <div className="flex justify-between items-start">
+                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">PCP</p>
+                      <p className="text-[10px] font-bold text-[#2a3439] text-right max-w-[60%] truncate">{member.pcp_name}</p>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Referral Required</p>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-sm ${member.referral_required ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
+                      {member.referral_required ? "Yes" : "No"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Prior Auth — Specialty</p>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-sm ${member.prior_auth_required_for_specialty ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
+                      {member.prior_auth_required_for_specialty ? "Required" : "Not Required"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Risk flags */}
+                {member.risk_flags.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-[#f0f4f7]">
+                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-2">Risk Flags</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {member.risk_flags.map((flag) => (
+                        <span key={flag} className="text-[9px] font-bold px-2 py-0.5 bg-[#fdeceb] text-[#c94b41] border border-red-200 rounded-sm uppercase tracking-wider">
+                          {flag.replace(/_/g, " ")}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Policy Alignment */}
+              {/* Coverage notes */}
+              {data.coverage_notes.length > 0 && (
+                <div className="bg-white rounded-sm border border-[rgba(169,180,185,0.1)] shadow-[0_2px_12px_rgba(15,23,42,0.06)] p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="material-symbols-outlined text-[#566166] text-base leading-none">info</span>
+                    <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-[#2a3439]">Coverage Notes</h3>
+                  </div>
+                  <ul className="space-y-2">
+                    {data.coverage_notes.map((note, i) => (
+                      <li key={i} className="text-[11px] text-[#566166] leading-snug pl-3 border-l-2 border-[#e8eff3]">{note}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+            </aside>
+
+            {/* Col 2: Coverage notes + Policy alignment */}
+            <aside className="col-span-12 xl:col-span-4 space-y-4">
+              {data.coverage_notes.length > 0 && (
+                <div className="bg-white rounded-sm border border-[rgba(169,180,185,0.1)] shadow-[0_2px_12px_rgba(15,23,42,0.06)] p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="material-symbols-outlined text-[#566166] text-base leading-none">info</span>
+                    <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-[#2a3439]">Coverage Notes</h3>
+                  </div>
+                  <ul className="space-y-2">
+                    {data.coverage_notes.map((note, i) => (
+                      <li key={i} className="text-[11px] text-[#566166] leading-snug pl-3 border-l-2 border-[#e8eff3]">{note}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {policy_alignment.length > 0 && (
                 <div className="bg-[#eef4ff] rounded-sm border border-[#dbe1ff] p-5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-[#0053dc] text-lg leading-none">policy</span>
-                    <h3 className="text-sm font-bold text-[#2a3439]">Policy Alignment</h3>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="material-symbols-outlined text-[#0053dc] text-base leading-none">policy</span>
+                    <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-[#2a3439]">Policy Alignment</h3>
                   </div>
                   <ul className="space-y-3">
                     {policy_alignment.map((item, i) => (
@@ -486,8 +492,10 @@ function MemberDetailView({
                   </ul>
                 </div>
               )}
+            </aside>
 
-              {/* Recent Claims */}
+            {/* Col 3: Recent claims + quick actions */}
+            <aside className="col-span-12 xl:col-span-3 space-y-4">
               {recent_claim_ids.length > 0 && (
                 <div className="bg-white rounded-sm border border-[rgba(169,180,185,0.1)] shadow-[0_2px_12px_rgba(15,23,42,0.06)] p-5">
                   <div className="flex items-center gap-2 mb-3">
@@ -506,8 +514,6 @@ function MemberDetailView({
                   </div>
                 </div>
               )}
-
-              {/* Quick Actions */}
               <div className="space-y-2">
                 <button type="button" className="w-full py-3 bg-white border border-[rgba(169,180,185,0.3)] text-[#2a3439] text-[10px] font-bold uppercase tracking-widest hover:bg-[#f0f4f7] transition-colors text-center rounded-sm">
                   Request Records
@@ -519,7 +525,7 @@ function MemberDetailView({
             </aside>
           </div>
 
-          {/* Bottom: Active Diagnoses + Surgical History */}
+          {/* Row 2: Active Diagnoses + Surgical History */}
           <div className="grid grid-cols-12 gap-5">
             {/* Active Diagnoses */}
             <section className="col-span-12 xl:col-span-6 bg-white rounded-sm border border-[rgba(169,180,185,0.1)] shadow-[0_2px_12px_rgba(15,23,42,0.06)] overflow-hidden">
@@ -587,6 +593,80 @@ function MemberDetailView({
               </div>
             </section>
           </div>
+
+          {/* Row 3: Clinical History Map — secondary, bottom of page */}
+          <section className="bg-white rounded-sm border border-[rgba(169,180,185,0.1)] shadow-[0_2px_12px_rgba(15,23,42,0.06)] overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#f0f4f7] flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-[#2a3439]">Clinical History Map</h2>
+                <p className="text-[11px] text-[#566166]">Documented procedures and diagnoses relevant to claim adjudication</p>
+              </div>
+              <div className="flex items-center gap-3">
+                {diagnostic_confidence > 0 && (
+                  <div className="flex items-center gap-2 pr-3 border-r border-[#f0f4f7]">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-[#566166]">Clinical Match</span>
+                    <span className="text-sm font-extrabold text-[#0053dc]">{diagnostic_confidence.toFixed(1)}%</span>
+                  </div>
+                )}
+                <div className="flex bg-[#f0f4f7] p-1 rounded-sm gap-0.5">
+                  {["Frontal", "Posterior", "Lateral"].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setActiveView(v.toLowerCase())}
+                      className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-sm transition-all ${
+                        activeView === v.toLowerCase() ? "bg-white text-[#0053dc] shadow-sm" : "text-[#566166] hover:text-[#2a3439]"
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-5 h-[340px]">
+              {/* Dark silhouette — fixed height, no longer dominates page */}
+              <div className="col-span-3 bg-[#0F172A] overflow-hidden flex items-center justify-center py-6">
+                <div className="relative h-full">
+                  <BodySilhouette />
+                  {clinical_hotspots.map((h) => <HotspotPin key={h.id} hotspot={h} />)}
+                  {clinical_hotspots.length === 0 && (
+                    <div className="absolute inset-0 flex items-end justify-center pb-4">
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest">No hotspots recorded</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Legend */}
+              <div className="col-span-2 p-5 overflow-y-auto bg-[#f7f9fb] flex flex-col">
+                <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-[#2a3439] mb-3">Documented Findings</h3>
+                <div className="space-y-2.5 flex-1">
+                  {clinical_hotspots.map((h, i) => (
+                    <div key={h.id} className="flex items-start gap-3 p-3 rounded-sm bg-white border-l-4 border-[#c94b41] shadow-sm">
+                      <div className="mt-0.5 w-5 h-5 shrink-0 rounded-sm bg-red-50 flex items-center justify-center text-[#c94b41] font-bold text-[9px]">
+                        {String(i + 1).padStart(2, "0")}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-[#2a3439]">{h.body_location}</h4>
+                        <p className="text-[10px] text-[#566166] font-medium mt-0.5 leading-snug">{h.description}</p>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          <span className="text-[9px] px-1.5 py-0.5 bg-[#e8eff3] border border-[rgba(169,180,185,0.2)] rounded-sm uppercase font-bold text-[#566166]">{h.icd_code}</span>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-sm uppercase font-bold border ${
+                            h.risk_level === "high_risk" ? "bg-red-50 border-red-200 text-[#c94b41]"
+                            : h.risk_level === "active_claim" ? "bg-[#eef4ff] border-[#0053dc]/20 text-[#0053dc]"
+                            : "bg-amber-50 border-amber-200 text-amber-700"
+                          }`}>{h.risk_level.replace(/_/g, " ")}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {clinical_hotspots.length === 0 && (
+                    <p className="text-[11px] text-[#566166] italic">No documented findings.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
