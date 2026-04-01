@@ -7,6 +7,12 @@ These documents are:
 - safe to ingest into the current Policy Manager flow
 - not copied from any real payer policy
 
+Additional upload-ready format variants are included for ingestion testing:
+- `APX-COM-500-EM-99213.pdf`
+- `APX-POS-11-PROF-2026.pdf`
+- `APX-NET-TIER1-PROF-2026.docx`
+- `APX-PRIORAUTH-ORTHO-2026.docx`
+
 Recommended upload tenant:
 - `Apex Health Plan`
 
@@ -23,6 +29,11 @@ Suggested test sequence:
 2. Verify they appear in the policy repository list
 3. Upload the sample single-claim `837P`
 4. Confirm the adjudication page shows policy matches grounded in the uploaded content
+
+Format testing sequence:
+1. Upload one of the PDF files to confirm PDF text extraction
+2. Upload one of the DOCX files to confirm DOCX text extraction
+3. Verify chunk counts and repository rows update in Policy Manager
 
 If you want to test from the terminal instead of the UI:
 

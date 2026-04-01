@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react";
 
-type ViewId = "dashboard" | "claims" | "intake" | "policy" | "providers" | "reports" | "detail";
+type ViewId = "dashboard" | "claims" | "intake" | "policy" | "providers" | "members" | "reports" | "detail";
 
 type AppShellProps = PropsWithChildren<{
   activeView: ViewId;
@@ -13,6 +13,7 @@ const navItems: Array<{ id: ViewId; label: string; icon: string }> = [
   { id: "intake", label: "Intake", icon: "upload_file" },
   { id: "policy", label: "Policy Manager", icon: "policy" },
   { id: "providers", label: "Providers", icon: "groups" },
+  { id: "members", label: "Members", icon: "person_search" },
   { id: "reports", label: "Reports", icon: "analytics" },
 ];
 

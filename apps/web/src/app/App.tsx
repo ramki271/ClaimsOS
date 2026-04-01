@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AdjudicationPage } from "../features/adjudication/components/AdjudicationPage";
 import { ClaimsHubPage } from "../features/claims/components/ClaimsHubPage";
 import { IntakePolicyPage } from "../features/intake/components/IntakePolicyPage";
+import { MembersPage } from "../features/members/components/MembersPage";
 import { OverviewPage } from "../features/overview/components/OverviewPage";
 import { PolicyManagerPage } from "../features/policy/components/PolicyManagerPage";
 import { ProvidersPage } from "../features/providers/components/ProvidersPage";
@@ -11,14 +12,18 @@ import {
   fetchClaimById,
   fetchClaims,
   fetchDemoClaim,
+  intakeClaimDocument,
   processClaim,
   submitReview,
+  uploadX12Batch,
   uploadX12Claim,
   type ClaimDetailResponse,
+  type ClaimDocumentIntakeResponse,
   type ClaimRecordSummary,
   type ClaimReviewRequest,
   type ClaimSubmission,
   type ClaimsFilter,
+  type X12BatchUploadResponse,
 } from "../shared/api/claims";
 import {
   fetchProviders,
@@ -26,7 +31,20 @@ import {
   type Provider,
   type ProviderCreateRequest,
 } from "../shared/api/providers";
-import { fetchPolicies, uploadPolicy, type PolicyListItem } from "../shared/api/policies";
+import {
+  fetchMembers,
+  fetchMemberById,
+  type MemberListItem,
+  type MemberDetailResponse,
+} from "../shared/api/members";
+import {
+  fetchPolicies,
+  fetchPolicyMetrics,
+  uploadPolicy,
+  type PolicyListItem,
+  type PolicyMetricsResponse,
+  type PolicyUploadResponse,
+} from "../shared/api/policies";
 
 const fallbackClaim: ClaimSubmission = {
   claim_id: "CLM-20260327-0001",
@@ -55,17 +73,23 @@ const fallbackClaim: ClaimSubmission = {
   date_of_service: "2026-03-01",
 };
 
-type ViewId = "dashboard" | "claims" | "intake" | "policy" | "providers" | "reports" | "detail";
+type ViewId = "dashboard" | "claims" | "intake" | "policy" | "providers" | "members" | "reports" | "detail";
 
 export default function App() {
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
   const [demoClaim, setDemoClaim] = useState<ClaimSubmission | null>(null);
   const [claimDraft, setClaimDraft] = useState(JSON.stringify(fallbackClaim, null, 2));
   const [result, setResult] = useState<ClaimDetailResponse | null>(null);
+  const [batchUploadResult, setBatchUploadResult] = useState<X12BatchUploadResponse | null>(null);
   const [claims, setClaims] = useState<ClaimRecordSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
   const [claimsFilter, setClaimsFilter] = useState<ClaimsFilter>({ limit: 20, offset: 0 });
+
+  // Members state
+  const [members, setMembers] = useState<MemberListItem[]>([]);
+  const [isMembersLoading, setIsMembersLoading] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<MemberDetailResponse | null>(null);
 
   // Providers state
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -74,6 +98,8 @@ export default function App() {
   // Policies state
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [isPoliciesLoading, setIsPoliciesLoading] = useState(false);
+  const [lastPolicyUpload, setLastPolicyUpload] = useState<PolicyUploadResponse | null>(null);
+  const [policyMetrics, setPolicyMetrics] = useState<PolicyMetricsResponse | null>(null);
 
   useEffect(() => {
     void handleLoadDemo();
@@ -89,6 +115,9 @@ export default function App() {
     }
     if (activeView === "policy") {
       void loadPolicies();
+    }
+    if (activeView === "members") {
+      void loadMembers();
     }
   }, [activeView]);
 
@@ -110,6 +139,27 @@ export default function App() {
       if (!selectedClaimId && records.length) {
         setSelectedClaimId(records[0].claim_id);
       }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async function loadMembers() {
+    setIsMembersLoading(true);
+    try {
+      const data = await fetchMembers("apex-health-plan");
+      setMembers(data);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsMembersLoading(false);
+    }
+  }
+
+  async function handleSelectMember(memberId: string) {
+    try {
+      const data = await fetchMemberById(memberId);
+      setSelectedMember(data);
     } catch (error) {
       console.error(error);
     }
@@ -144,6 +194,7 @@ export default function App() {
       const parsed = JSON.parse(claimDraft) as ClaimSubmission;
       const response = await processClaim(parsed);
       setResult(response);
+      setBatchUploadResult(null);
       setSelectedClaimId(response.claim.claim_id);
       await loadClaims(claimsFilter);
       setActiveView("detail");
@@ -159,6 +210,7 @@ export default function App() {
     try {
       const response = await uploadX12Claim(file);
       setResult(response);
+      setBatchUploadResult(null);
       setSelectedClaimId(response.claim.claim_id);
       await loadClaims(claimsFilter);
       setActiveView("detail");
@@ -168,6 +220,56 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function handleUploadX12Batch(file: File) {
+    setIsLoading(true);
+    try {
+      const response = await uploadX12Batch(file);
+      setBatchUploadResult(response);
+      const firstProcessed = response.results.find((item) => item.status === "processed" && item.result);
+      if (firstProcessed?.result) {
+        setResult(firstProcessed.result);
+        setSelectedClaimId(firstProcessed.result.claim.claim_id);
+      }
+      await loadClaims(claimsFilter);
+      setActiveView("intake");
+    } catch (error) {
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleSubmitDraft(claim: ClaimSubmission) {
+    setIsLoading(true);
+    try {
+      const response = await processClaim(claim);
+      setResult(response);
+      setBatchUploadResult(null);
+      setSelectedClaimId(response.claim.claim_id);
+      await loadClaims(claimsFilter);
+      setActiveView("detail");
+    } catch (error) {
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleIntakeDocument(
+    file: File,
+    autoProcess: boolean,
+    payerNameHint?: string,
+  ): Promise<ClaimDocumentIntakeResponse> {
+    const response = await intakeClaimDocument(file, { autoProcess, payerNameHint });
+    if (autoProcess && response.processed_result) {
+      setResult(response.processed_result);
+      setSelectedClaimId(response.processed_result.claim.claim_id);
+      await loadClaims(claimsFilter);
+      setActiveView("detail");
+    }
+    return response;
   }
 
   async function handleSubmitReview(claimId: string, review: ClaimReviewRequest) {
@@ -184,8 +286,12 @@ export default function App() {
   async function loadPolicies() {
     setIsPoliciesLoading(true);
     try {
-      const data = await fetchPolicies("apex-health-plan");
+      const [data, metrics] = await Promise.all([
+        fetchPolicies("apex-health-plan"),
+        fetchPolicyMetrics("apex-health-plan"),
+      ]);
       setPolicies(data);
+      setPolicyMetrics(metrics);
     } catch (error) {
       console.error(error);
     } finally {
@@ -194,7 +300,8 @@ export default function App() {
   }
 
   async function handleUploadPolicy(file: File, payerName: string, classification: string) {
-    await uploadPolicy(file, payerName, classification);
+    const result = await uploadPolicy(file, payerName, classification);
+    setLastPolicyUpload(result);
     await loadPolicies();
   }
 
@@ -214,18 +321,25 @@ export default function App() {
       )}
       {activeView === "intake" && (
         <IntakePolicyPage
+          batchUploadResult={batchUploadResult}
           claimDraft={claimDraft}
           demoClaim={demoClaim}
           isLoading={isLoading}
+          onIntakeDocument={handleIntakeDocument}
+          onSubmitDraft={(claim) => handleSubmitDraft(claim)}
           onLoadDemo={() => void handleLoadDemo()}
           onProcessClaim={() => void handleProcessClaim()}
+          onUploadX12Batch={handleUploadX12Batch}
           onUploadX12={handleUploadX12}
+          onViewProcessedClaim={(claimId) => void handleSelectClaim(claimId)}
           setClaimDraft={setClaimDraft}
         />
       )}
       {activeView === "policy" && (
         <PolicyManagerPage
           isPoliciesLoading={isPoliciesLoading}
+          lastPolicyUpload={lastPolicyUpload}
+          metrics={policyMetrics}
           onUploadPolicy={handleUploadPolicy}
           policies={policies}
         />
@@ -235,6 +349,15 @@ export default function App() {
           isLoading={isProvidersLoading}
           onCreateProvider={handleCreateProvider}
           providers={providers}
+        />
+      )}
+      {activeView === "members" && (
+        <MembersPage
+          isLoading={isMembersLoading}
+          members={members}
+          onOpenClaim={handleSelectClaim}
+          onSelectMember={handleSelectMember}
+          selectedMember={selectedMember}
         />
       )}
       {activeView === "reports" && <ReportsPage claims={claims} />}

@@ -1,5 +1,10 @@
+from datetime import datetime, timezone
+from io import BytesIO
+from zipfile import ZIP_DEFLATED, ZipFile
+
 from fastapi.testclient import TestClient
 
+from app.api.v1.routes import policies as policy_routes
 from app.domain.policies.models import PolicyDocumentRecord, PolicyListItem, PolicyUploadResponse
 from app.domain.policies.repository import get_policies_repository
 from app.domain.providers.repository import get_providers_repository
@@ -35,6 +40,7 @@ class FakePoliciesRepository:
             raw_text=raw_text,
             metadata=metadata,
             status="indexed",
+            created_at=datetime.now(timezone.utc),
         )
         self.documents.append(doc)
         return doc
@@ -63,6 +69,19 @@ class FakePoliciesRepository:
             for doc in docs[:limit]
         ]
 
+    def update_document(self, *, document_id, status=None, metadata=None, chunk_count=None):
+        for doc in self.documents:
+            if doc.id != document_id:
+                continue
+            if status is not None:
+                doc.status = status
+            if metadata is not None:
+                doc.metadata = metadata
+            if chunk_count is not None:
+                doc.chunk_count = chunk_count
+            return doc
+        raise KeyError(document_id)
+
     def retrieve_chunks(self, *, tenant_id, limit=25):
         rows = []
         for doc in self.documents:
@@ -80,6 +99,20 @@ class FakePoliciesRepository:
                     }
                 )
         return rows[:limit]
+
+    def list_document_records(self, *, tenant_id=None, limit=500):
+        docs = self.documents
+        if tenant_id:
+            docs = [doc for doc in docs if doc.tenant_id == tenant_id]
+        return docs[:limit]
+
+    def count_chunks(self, *, tenant_id=None):
+        count = 0
+        for doc in self.documents:
+            if tenant_id and doc.tenant_id != tenant_id:
+                continue
+            count += len(self.chunks.get(doc.id or "", []))
+        return count
 
 
 class FakeProvidersRepository:
@@ -131,8 +164,91 @@ def test_upload_policy_rejects_unsupported_file_type() -> None:
     response = client.post(
         "/api/policies/upload",
         data={"payer_name": "Apex Health Plan"},
-        files={"file": ("policy.pdf", b"%PDF-1.7 fake pdf", "application/pdf")},
+        files={"file": ("policy.xlsx", b"fake spreadsheet bytes", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
 
     assert response.status_code == 400
     assert "unsupported" in response.json()["detail"].lower()
+
+
+def test_upload_policy_indexes_pdf_document(monkeypatch) -> None:
+    monkeypatch.setattr(
+        policy_routes.ingestion_service,
+        "_extract_pdf_text",
+        lambda *, content: "PDF policy text for CPT 99213 office visits.",
+    )
+
+    response = client.post(
+        "/api/policies/upload",
+        data={"payer_name": "Apex Health Plan", "classification": "POLICY_CORE"},
+        files={"file": ("office-visit-policy.pdf", b"%PDF-1.7 fake pdf", "application/pdf")},
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["status"] == "indexed"
+    assert body["document"]["filename"] == "office-visit-policy.pdf"
+    assert body["chunks_created"] >= 1
+
+
+def test_upload_policy_indexes_docx_document() -> None:
+    response = client.post(
+        "/api/policies/upload",
+        data={"payer_name": "Apex Health Plan", "classification": "POLICY_CORE"},
+        files={
+            "file": (
+                "office-visit-policy.docx",
+                _build_test_docx("Outpatient office visits with CPT 99213 are covered for POS 11."),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["status"] == "indexed"
+    assert body["document"]["filename"] == "office-visit-policy.docx"
+    assert body["chunks_created"] >= 1
+
+
+def test_policy_metrics_returns_summary_and_recent_uploads() -> None:
+    response = client.get("/api/policies/metrics", params={"tenant_key": "apex-health-plan"})
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["summary"]["total_documents"] >= 1
+    assert body["summary"]["indexed_documents"] >= 1
+    assert body["summary"]["total_chunks"] >= 1
+    assert len(body["recent_uploads"]) >= 1
+    assert len(body["trend"]) >= 1
+
+
+def _build_test_docx(text: str) -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>""",
+        )
+        archive.writestr(
+            "_rels/.rels",
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>""",
+        )
+        archive.writestr(
+            "word/document.xml",
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>{text}</w:t></w:r></w:p>
+  </w:body>
+</w:document>""",
+        )
+    return buffer.getvalue()

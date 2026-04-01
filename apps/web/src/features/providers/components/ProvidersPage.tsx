@@ -40,7 +40,7 @@ export function ProvidersPage({ providers, isLoading, onCreateProvider }: Provid
   }
 
   async function handleSubmit() {
-    if (!form.name.trim() || !form.npi.trim() || !form.provider_key.trim()) {
+    if (!form.name.trim() || !(form.npi ?? "").trim() || !form.provider_key.trim()) {
       setFormError("Name, NPI, and Provider Key are required.");
       return;
     }
@@ -110,7 +110,7 @@ export function ProvidersPage({ providers, isLoading, onCreateProvider }: Provid
                   onChange={(e) => setField(key, e.target.value)}
                   placeholder={placeholder}
                   type="text"
-                  value={form[key]}
+                  value={form[key] ?? ""}
                 />
               </div>
             ))}

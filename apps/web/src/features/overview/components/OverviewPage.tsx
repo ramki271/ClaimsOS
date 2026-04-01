@@ -245,7 +245,7 @@ export function OverviewPage({ claims, onSelectClaim }: OverviewPageProps) {
             ))
           ) : (
             <div className="px-7 py-12 text-center text-sm text-slate-400">
-              Process the first claim via Policy Manager to populate the dashboard.
+              Process the first claim via <span className="font-semibold text-[#0053dc]">Intake</span> to populate the dashboard.
             </div>
           )}
         </div>

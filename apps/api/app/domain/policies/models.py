@@ -44,3 +44,36 @@ class PolicyListItem(BaseModel):
     status: str
     chunk_count: int
     created_at: Optional[datetime] = None
+
+
+class PolicyMetricsSummary(BaseModel):
+    total_documents: int
+    total_chunks: int
+    indexed_documents: int
+    success_rate: float
+    queue_depth: int
+    avg_ingestion_latency_ms: float
+    documents_indexed_24h: int
+
+
+class PolicyMetricsPoint(BaseModel):
+    date: str
+    label: str
+    documents_indexed: int
+    chunks_indexed: int
+
+
+class PolicyRecentUpload(BaseModel):
+    filename: str
+    title: str
+    status: str
+    chunk_count: int
+    created_at: Optional[datetime] = None
+    retrieval_backend: Optional[str] = None
+    openai_ingestion_status: Optional[str] = None
+
+
+class PolicyMetricsResponse(BaseModel):
+    summary: PolicyMetricsSummary
+    trend: list[PolicyMetricsPoint]
+    recent_uploads: list[PolicyRecentUpload]

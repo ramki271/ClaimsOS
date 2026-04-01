@@ -25,6 +25,14 @@ class X12ProfessionalClaimParser:
     """Parses a first-pass 837P transaction into the canonical claim model."""
 
     def parse(self, payload: str) -> ClaimSubmission:
+        claims = self.parse_many(payload)
+        if len(claims) != 1:
+            raise X12ParseError(
+                f"Expected exactly one claim in the X12 payload, found {len(claims)}."
+            )
+        return claims[0]
+
+    def parse_many(self, payload: str) -> list[ClaimSubmission]:
         if not payload.strip():
             raise X12ParseError("Uploaded X12 payload is empty.")
 
@@ -33,7 +41,6 @@ class X12ProfessionalClaimParser:
         raw_segments = [segment.strip() for segment in payload.split(segment_term) if segment.strip()]
         segments = [segment.split(element_sep) for segment in raw_segments]
 
-        claim_id: str | None = None
         payer_name = ""
         plan_name = "X12 Professional Claim"
         member_id = ""
@@ -41,25 +48,62 @@ class X12ProfessionalClaimParser:
         patient_id = ""
         provider_id = ""
         provider_name = ""
-        place_of_service = "11"
-        diagnosis_codes: list[str] = []
-        service_lines: list[_LineDraft] = []
-        claim_amount = Decimal("0.00")
-        claim_date_of_service: str | None = None
-
+        claims: list[ClaimSubmission] = []
+        claim_state: dict[str, object] | None = None
         current_line: _LineDraft | None = None
+
+        def flush_current_line() -> None:
+            nonlocal current_line, claim_state
+            if current_line is not None and claim_state is not None:
+                claim_state["service_lines"].append(current_line)
+                current_line = None
+
+        def finalize_claim() -> None:
+            nonlocal claim_state, current_line
+            if claim_state is None:
+                return
+            flush_current_line()
+            claims.append(
+                self._build_claim_submission(
+                    claim_id=claim_state["claim_id"],
+                    payer_name=payer_name,
+                    plan_name=claim_state["plan_name"],
+                    member_id=member_id,
+                    member_name=member_name,
+                    patient_id=patient_id,
+                    provider_id=provider_id,
+                    provider_name=provider_name,
+                    place_of_service=claim_state["place_of_service"],
+                    diagnosis_codes=claim_state["diagnosis_codes"],
+                    service_lines=claim_state["service_lines"],
+                    claim_amount=claim_state["claim_amount"],
+                    claim_date_of_service=claim_state["claim_date_of_service"],
+                )
+            )
+            claim_state = None
 
         for parts in segments:
             tag = parts[0]
 
             if tag == "CLM":
+                finalize_claim()
                 claim_id = self._required(parts, 1, "CLM01 claim identifier")
                 claim_amount = Decimal(self._required(parts, 2, "CLM02 total charge amount"))
                 pos = self._safe(parts, 5)
+                place_of_service = "11"
                 if pos and ":" in pos:
                     place_of_service = pos.split(":")[0] or place_of_service
                 elif pos:
                     place_of_service = pos
+                claim_state = {
+                    "claim_id": claim_id,
+                    "claim_amount": claim_amount,
+                    "place_of_service": place_of_service,
+                    "diagnosis_codes": [],
+                    "service_lines": [],
+                    "claim_date_of_service": None,
+                    "plan_name": plan_name,
+                }
 
             elif tag == "NM1":
                 entity = self._safe(parts, 1)
@@ -76,18 +120,25 @@ class X12ProfessionalClaimParser:
 
             elif tag == "SBR":
                 plan_name = self._safe(parts, 3) or plan_name
+                if claim_state is not None:
+                    claim_state["plan_name"] = plan_name
 
             elif tag == "HI":
-                diagnosis_codes.extend(self._parse_diagnosis_codes(parts[1:]))
+                if claim_state is not None:
+                    claim_state["diagnosis_codes"].extend(self._parse_diagnosis_codes(parts[1:]))
 
             elif tag == "LX":
-                if current_line is not None:
-                    service_lines.append(current_line)
+                flush_current_line()
                 current_line = _LineDraft(line_number=int(self._required(parts, 1, "LX01 line number")), procedure_code="")
 
             elif tag == "SV1":
                 if current_line is None:
-                    current_line = _LineDraft(line_number=len(service_lines) + 1, procedure_code="")
+                    line_number = (
+                        len(claim_state["service_lines"]) + 1
+                        if claim_state is not None
+                        else len(claims) + 1
+                    )
+                    current_line = _LineDraft(line_number=line_number, procedure_code="")
                 procedure_code, modifiers = self._parse_procedure(self._required(parts, 1, "SV101 procedure composite"))
                 current_line.procedure_code = procedure_code
                 current_line.modifiers = modifiers
@@ -103,12 +154,31 @@ class X12ProfessionalClaimParser:
                     normalized_date = self._normalize_date(date_value)
                     if current_line is not None:
                         current_line.date_of_service = normalized_date
-                    if claim_date_of_service is None:
-                        claim_date_of_service = normalized_date
+                    if claim_state is not None and claim_state["claim_date_of_service"] is None:
+                        claim_state["claim_date_of_service"] = normalized_date
 
-        if current_line is not None:
-            service_lines.append(current_line)
+        finalize_claim()
+        if not claims:
+            raise X12ParseError("Could not find CLM segment with a claim identifier.")
+        return claims
 
+    def _build_claim_submission(
+        self,
+        *,
+        claim_id: str,
+        payer_name: str,
+        plan_name: str,
+        member_id: str,
+        member_name: str,
+        patient_id: str,
+        provider_id: str,
+        provider_name: str,
+        place_of_service: str,
+        diagnosis_codes: list[str],
+        service_lines: list[_LineDraft],
+        claim_amount: Decimal,
+        claim_date_of_service: str | None,
+    ) -> ClaimSubmission:
         if not claim_id:
             raise X12ParseError("Could not find CLM segment with a claim identifier.")
         if not member_name:
@@ -130,7 +200,9 @@ class X12ProfessionalClaimParser:
             )
             for line in service_lines
         ]
-        total_amount = float(claim_amount) if claim_amount else round(sum(line.charge_amount for line in normalized_lines), 2)
+        total_amount = float(claim_amount) if claim_amount else round(
+            sum(line.charge_amount for line in normalized_lines), 2
+        )
 
         return ClaimSubmission(
             claim_id=claim_id,
@@ -148,7 +220,9 @@ class X12ProfessionalClaimParser:
             procedure_codes=[line.procedure_code for line in normalized_lines],
             service_lines=normalized_lines,
             amount=total_amount,
-            date_of_service=self._normalize_date(claim_date_of_service or self._first_line_date(service_lines)),
+            date_of_service=self._normalize_date(
+                claim_date_of_service or self._first_line_date(service_lines)
+            ),
         )
 
     def _required(self, parts: list[str], index: int, label: str) -> str:

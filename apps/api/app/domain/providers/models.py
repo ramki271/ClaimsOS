@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -9,6 +9,7 @@ class Tenant(BaseModel):
     tenant_key: str
     tenant_type: Literal["payer", "tpa"] = "payer"
     name: str
+    metadata: dict = Field(default_factory=dict)
     created_at: Optional[datetime] = None
 
 
@@ -22,8 +23,12 @@ class ProviderRecord(BaseModel):
     specialty: Optional[str] = None
     network_status: Literal["in_network", "out_of_network", "pending"] = "in_network"
     contract_tier: Optional[str] = None
+    contract_status: Literal["active", "inactive", "pending"] = "active"
+    network_effective_date: Optional[date] = None
+    network_end_date: Optional[date] = None
+    plan_participation: list[str] = Field(default_factory=list)
     active: bool = True
-    metadata: dict = {}
+    metadata: dict = Field(default_factory=dict)
     created_at: Optional[datetime] = None
 
 
@@ -36,5 +41,9 @@ class ProviderCreateRequest(BaseModel):
     specialty: Optional[str] = None
     network_status: Literal["in_network", "out_of_network", "pending"] = "in_network"
     contract_tier: Optional[str] = None
+    contract_status: Literal["active", "inactive", "pending"] = "active"
+    network_effective_date: Optional[date] = None
+    network_end_date: Optional[date] = None
+    plan_participation: list[str] = Field(default_factory=list)
     active: bool = True
     metadata: dict = Field(default_factory=dict)

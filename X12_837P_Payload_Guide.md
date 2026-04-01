@@ -14,6 +14,7 @@ The backend currently supports:
 - one claim per file
 - common delimiter format using `*` as element separator and `~` as segment terminator
 - common claim/service line segments needed for the MVP demo flow
+- bulk `837P` batch uploads through a separate endpoint when one file contains multiple `CLM` claim groupings
 
 The backend currently does **not** fully support:
 - multiple claims in one file
@@ -29,6 +30,12 @@ Upload endpoint:
 
 ```http
 POST /api/claims/upload-x12
+```
+
+Bulk upload endpoint:
+
+```http
+POST /api/claims/upload-x12-batch
 ```
 
 Multipart form field:
@@ -189,22 +196,26 @@ The parser will reject uploads with `400` if it cannot find core fields. Common 
 
 ## Bulk Uploads With Multiple Claims
 
-Short answer: **no, not safely right now**.
+Short answer: **yes, now through the batch endpoint**.
 
-The current feature is designed for:
-- one `837P` claim per file
-- one canonical claim output
-- one adjudication result per upload
+Current behavior:
+- `POST /api/claims/upload-x12`
+  - expects exactly one claim in the file
+  - returns one canonical claim output
+  - returns one adjudication result
+- `POST /api/claims/upload-x12-batch`
+  - accepts multiple `CLM` groupings in one file
+  - splits them into separate canonical claims
+  - processes each claim independently
+  - returns batch results with per-claim success/failure
 
-If you upload a file containing multiple claims:
-- the current parser does **not** properly split them into separate claims
-- the result may be incorrect or unpredictable
-- later claim segments may overwrite earlier claim-level values
-- service lines and diagnosis data can be mixed incorrectly across claims
+If you send multiple claims to the single-claim endpoint:
+- the upload will now be rejected because that endpoint expects exactly one claim
+- use the batch endpoint instead
 
 So for now:
 - `single claim file`: supported
-- `bulk file with multiple claims`: not supported
+- `bulk file with multiple claims`: supported through `POST /api/claims/upload-x12-batch`
 
 ## Recommended Current Usage
 
@@ -215,12 +226,12 @@ For the current MVP:
 - use common 837P segment patterns
 - test with office visit / simple outpatient claims first
 
-## Recommended Next Backend Upgrade
+## Remaining Bulk Limitations
 
-To support true bulk uploads, the parser would need to be extended to:
+The first-pass batch parser now supports multiple `CLM` groupings, but it still has MVP limitations:
 
-1. split one inbound X12 file into multiple claim envelopes
-2. build one canonical claim per `CLM` grouping
-3. process each claim independently
-4. return batch results with per-claim success/failure
-5. report line-level and segment-level parse errors more precisely
+1. it assumes a simplified professional `837P` layout
+2. subscriber/provider/payer context is reused across claims unless reset by later segments
+3. line-level parse errors are still coarse
+4. payer-specific loop variations are not fully modeled
+5. partial parse failure reporting is not yet segment-precise

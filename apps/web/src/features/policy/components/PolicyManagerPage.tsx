@@ -1,14 +1,13 @@
 import { useRef, useState } from "react";
-import type { PolicyListItem } from "../../../shared/api/policies";
+import type { PolicyListItem, PolicyMetricsResponse, PolicyRecentUpload, PolicyUploadResponse } from "../../../shared/api/policies";
 
-// Static demo data for ingestion metrics — aggregate endpoints not yet available
-const BAR_HEIGHTS = [40, 55, 45, 70, 90, 60, 40, 35, 50, 65, 80, 75, 60, 45, 55];
-
-const RECENT_UPLOADS = [
-  { name: "Payer_Rulebook_V4.txt", size: "4.2 MB", time: "2 mins ago" },
-  { name: "Coverage_Matrix_2024.md", size: "12.1 KB", time: "15 mins ago" },
-  { name: "LCD_Local_Determinations.txt", size: "8.7 KB", time: "1 hour ago" },
-];
+function formatUploadTime(createdAt: string | null): string {
+  if (!createdAt) return "—";
+  const normalized = createdAt.replace(/(\.\d{3})\d+/, "$1");
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 
 const CLASSIFICATIONS = [
   { value: "POLICY_CORE", label: "Policy Core" },
@@ -17,7 +16,8 @@ const CLASSIFICATIONS = [
   { value: "CLINICAL_GUIDELINE", label: "Clinical Guideline" },
 ];
 
-const ACCEPTED_FORMATS = [".txt", ".md", ".json", ".xml"];
+const ACCEPTED_FORMATS = [".pdf", ".docx", ".txt", ".md", ".json", ".xml"];
+const EXTRACTED_FORMATS = new Set([".pdf", ".docx"]);
 
 function ingestionStatus(status: string): "Synchronized" | "Indexing" | "RAG Sync Failed" {
   if (status === "indexed") return "Synchronized";
@@ -51,12 +51,72 @@ function pillColor(status: string) {
 type PolicyManagerPageProps = {
   policies: PolicyListItem[];
   isPoliciesLoading: boolean;
+  lastPolicyUpload: PolicyUploadResponse | null;
+  metrics: PolicyMetricsResponse | null;
   onUploadPolicy: (file: File, payerName: string, classification: string) => Promise<void>;
 };
+
+type RetrievalBadgeState = {
+  retrieval_backend?: string | null;
+  openai_ingestion_status?: string | null;
+  openai_file_id?: string | null;
+};
+
+function RetrievalBadge({ state }: { state: RetrievalBadgeState | null }) {
+  const backend = state?.retrieval_backend;
+  const oaiStatus = state?.openai_ingestion_status;
+
+  if (backend === "openai_vector_store" && oaiStatus === "indexed") {
+    return (
+      <div className="flex items-center gap-2 rounded-sm bg-[#eef4ff] px-3 py-2">
+        <span
+          className="material-symbols-outlined text-sm text-[#0053dc]"
+          style={{ fontVariationSettings: "'FILL' 1" }}
+        >
+          psychology
+        </span>
+        <span className="text-[11px] font-bold text-[#0053dc]">
+          OpenAI Vector Store — Semantic retrieval active
+        </span>
+        {state?.openai_file_id && (
+          <span className="font-mono text-[9px] text-[#566166]">
+            {state.openai_file_id.slice(0, 16)}…
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (oaiStatus === "failed") {
+    return (
+      <div className="flex items-center gap-2 rounded-sm bg-amber-50 px-3 py-2">
+        <span className="material-symbols-outlined text-sm text-amber-600">warning</span>
+        <span className="text-[11px] font-bold text-amber-700">
+          Local RAG — OpenAI ingestion failed, falling back to heuristic retrieval
+        </span>
+      </div>
+    );
+  }
+
+  if (oaiStatus === "not_configured") {
+    return (
+      <div className="flex items-center gap-2 rounded-sm bg-slate-50 px-3 py-2">
+        <span className="material-symbols-outlined text-sm text-slate-400">hub</span>
+        <span className="text-[11px] font-bold text-slate-500">
+          Local RAG — OpenAI not configured, using heuristic chunk retrieval
+        </span>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 export function PolicyManagerPage({
   policies,
   isPoliciesLoading,
+  lastPolicyUpload,
+  metrics,
   onUploadPolicy,
 }: PolicyManagerPageProps) {
   const [showUploadForm, setShowUploadForm] = useState(false);
@@ -68,6 +128,20 @@ export function PolicyManagerPage({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const latestRetrievalState: RetrievalBadgeState | null =
+    lastPolicyUpload
+      ? {
+          retrieval_backend: lastPolicyUpload.document.metadata.retrieval_backend ?? null,
+          openai_ingestion_status: lastPolicyUpload.document.metadata.openai_ingestion_status ?? null,
+          openai_file_id: lastPolicyUpload.document.metadata.openai_file_id ?? null,
+        }
+      : metrics?.recent_uploads?.[0]
+        ? {
+            retrieval_backend: metrics.recent_uploads[0].retrieval_backend ?? null,
+            openai_ingestion_status: metrics.recent_uploads[0].openai_ingestion_status ?? null,
+            openai_file_id: null,
+          }
+        : null;
 
   function handleFileDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -171,10 +245,17 @@ export function PolicyManagerPage({
                   className="material-symbols-outlined text-3xl text-[#0053dc]"
                   style={{ fontVariationSettings: "'FILL' 1" }}
                 >
-                  task
+                  {uploadFile.name.endsWith(".pdf") ? "picture_as_pdf" : "task"}
                 </span>
                 <p className="text-sm font-bold text-[#2a3439]">{uploadFile.name}</p>
-                <p className="text-[10px] text-slate-400">{(uploadFile.size / 1024).toFixed(1)} KB · Ready</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] text-slate-400">{(uploadFile.size / 1024).toFixed(1)} KB · Ready</p>
+                  {EXTRACTED_FORMATS.has(`.${uploadFile.name.split(".").pop()?.toLowerCase()}`) && (
+                    <span className="rounded-sm bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700">
+                      Text extraction
+                    </span>
+                  )}
+                </div>
                 <button
                   className="text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-[#c94b41]"
                   onClick={() => setUploadFile(null)}
@@ -197,6 +278,9 @@ export function PolicyManagerPage({
                     browse
                   </button>
                   {" "}— {ACCEPTED_FORMATS.join(", ")}
+                </p>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  PDF and DOCX files are text-extracted, chunked, and indexed after upload.
                 </p>
               </div>
             )}
@@ -232,16 +316,29 @@ export function PolicyManagerPage({
           </div>
 
           {uploadError && (
-            <div className="mt-4 flex items-start gap-3 rounded-sm border-l-4 border-[#c94b41] bg-[#fdeceb] px-4 py-3">
-              <span className="material-symbols-outlined mt-0.5 text-sm text-[#c94b41]">error</span>
-              <p className="text-xs font-semibold text-[#752121]">{uploadError}</p>
+            <div className="mt-4 space-y-2">
+              <div className="flex items-start gap-3 rounded-sm border-l-4 border-[#c94b41] bg-[#fdeceb] px-4 py-3">
+                <span className="material-symbols-outlined mt-0.5 text-sm text-[#c94b41]">error</span>
+                <p className="text-xs font-semibold text-[#752121]">{uploadError}</p>
+              </div>
+              {uploadFile && EXTRACTED_FORMATS.has(`.${uploadFile.name.split(".").pop()?.toLowerCase()}`) && (
+                <p className="text-[11px] text-[#566166]">
+                  If text extraction failed, try a text-readable version of this document (.txt or .md) for more reliable indexing.
+                </p>
+              )}
             </div>
           )}
 
-          {uploadSuccess && (
-            <div className="mt-4 flex items-center gap-3 rounded-sm border-l-4 border-emerald-500 bg-emerald-50 px-4 py-3">
-              <span className="material-symbols-outlined text-sm text-emerald-600">check_circle</span>
-              <p className="text-xs font-semibold text-emerald-700">{uploadSuccess}</p>
+          {uploadSuccess && lastPolicyUpload && (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center gap-3 rounded-sm border-l-4 border-emerald-500 bg-emerald-50 px-4 py-3">
+                <span className="material-symbols-outlined text-sm text-emerald-600">check_circle</span>
+                <p className="text-xs font-semibold text-emerald-700">{uploadSuccess}</p>
+                <span className="ml-auto text-[10px] font-bold text-emerald-600">
+                  {lastPolicyUpload.chunks_created} chunks indexed
+                </span>
+              </div>
+              <RetrievalBadge state={latestRetrievalState} />
             </div>
           )}
 
@@ -278,21 +375,53 @@ export function PolicyManagerPage({
               </span>
             </div>
           </div>
-          <div className="flex h-44 items-end gap-1.5 px-2">
-            {BAR_HEIGHTS.map((h, i) => (
-              <div
-                className={`flex-1 rounded-t-sm ${i === 4 ? "bg-[#0053dc]" : "bg-[#dbe1ff]"}`}
-                key={i}
-                style={{ height: `${h}%` }}
-              />
-            ))}
-          </div>
+          {(() => {
+            const trend = metrics?.trend ?? [];
+            const maxChunks = Math.max(...trend.map((p) => p.chunks_indexed), 1);
+            return (
+              <div className="flex h-44 items-end gap-1.5 px-2">
+                {trend.length > 0 ? trend.map((point, i) => {
+                  const pct = Math.round((point.chunks_indexed / maxChunks) * 100);
+                  const isLatest = i === trend.length - 1;
+                  return (
+                    <div
+                      className={`flex-1 rounded-t-sm transition-all ${isLatest ? "bg-[#0053dc]" : "bg-[#dbe1ff]"}`}
+                      key={point.date}
+                      style={{ height: `${Math.max(pct, 2)}%` }}
+                      title={`${point.label}: ${point.chunks_indexed} chunks`}
+                    />
+                  );
+                }) : (
+                  <p className="flex w-full items-center justify-center text-xs text-slate-400">
+                    No ingestion data yet
+                  </p>
+                )}
+              </div>
+            );
+          })()}
           <div className="mt-8 grid grid-cols-4 border-t border-slate-50 pt-8 text-center">
             {[
-              { label: "Total Throughput", value: "14.2 GB/h" },
-              { label: "Latency (Avg)", value: "114ms" },
-              { label: "Success Rate", value: "99.98%", highlight: true },
-              { label: "Queue Depth", value: `${policies.length} docs` },
+              {
+                label: "Docs Indexed (24h)",
+                value: metrics ? String(metrics.summary.documents_indexed_24h) : "—",
+              },
+              {
+                label: "Latency (Avg)",
+                value: metrics
+                  ? metrics.summary.avg_ingestion_latency_ms > 0
+                    ? `${metrics.summary.avg_ingestion_latency_ms}ms`
+                    : "—"
+                  : "—",
+              },
+              {
+                label: "Success Rate",
+                value: metrics ? `${Math.round(metrics.summary.success_rate * 100)}%` : "—",
+                highlight: true,
+              },
+              {
+                label: "Queue Depth",
+                value: metrics ? String(metrics.summary.queue_depth) : "—",
+              },
             ].map((m) => (
               <div key={m.label}>
                 <p className="mb-1 text-[10px] font-bold uppercase text-[#566166]">{m.label}</p>
@@ -308,28 +437,42 @@ export function PolicyManagerPage({
         <div className="relative overflow-hidden rounded-sm bg-slate-900 p-6 text-white shadow-xl lg:col-span-4">
           <div className="relative z-10 flex h-full flex-col">
             <div className="mb-auto">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                RAG Intelligence
-              </span>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  RAG Intelligence
+                </span>
+                {latestRetrievalState?.retrieval_backend === "openai_vector_store" &&
+                latestRetrievalState?.openai_ingestion_status === "indexed" ? (
+                  <span className="flex items-center gap-1 rounded-sm bg-[#0053dc]/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
+                    OpenAI Hosted
+                  </span>
+                ) : latestRetrievalState ? (
+                  <span className="flex items-center gap-1 rounded-sm bg-slate-700 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                    Local RAG
+                  </span>
+                ) : null}
+              </div>
               <h3 className="mb-6 text-xl font-bold">Repository Health</h3>
               <div className="space-y-5">
                 {[
                   {
                     label: "Policy Documents",
-                    value: `${policies.length} Indexed`,
-                    pct: Math.min(policies.length * 10, 100),
+                    value: metrics ? `${metrics.summary.total_documents} Indexed` : "—",
+                    pct: Math.min((metrics?.summary.total_documents ?? 0) * 10, 100),
                     bar: "bg-[#0053dc]",
                   },
                   {
                     label: "Total Chunks",
-                    value: `${policies.reduce((s, p) => s + p.chunk_count, 0)}`,
-                    pct: Math.min(policies.reduce((s, p) => s + p.chunk_count, 0) / 5, 100),
+                    value: metrics ? String(metrics.summary.total_chunks) : "—",
+                    pct: Math.min((metrics?.summary.total_chunks ?? 0) / 5, 100),
                     bar: "bg-blue-400",
                   },
                   {
-                    label: "Query Accuracy",
-                    value: "96.4%",
-                    pct: 96,
+                    label: "Indexed Rate",
+                    value: metrics ? `${Math.round(metrics.summary.success_rate * 100)}%` : "—",
+                    pct: Math.round((metrics?.summary.success_rate ?? 0) * 100),
                     bar: "bg-slate-400",
                   },
                 ].map((item) => (
@@ -468,26 +611,32 @@ export function PolicyManagerPage({
             Recent Upload Activity
           </h4>
           <div className="space-y-5">
-            {RECENT_UPLOADS.map((upload) => (
-              <div className="flex items-center justify-between" key={upload.name}>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-slate-50">
-                    <span className="material-symbols-outlined text-sm text-[#0053dc]">description</span>
+            {metrics?.recent_uploads?.length ? (
+              metrics.recent_uploads.map((upload: PolicyRecentUpload) => (
+                <div className="flex items-center justify-between" key={upload.filename + (upload.created_at ?? "")}>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-slate-50">
+                      <span className="material-symbols-outlined text-sm text-[#0053dc]">description</span>
+                    </div>
+                    <div>
+                      <p className="max-w-[140px] truncate text-[11px] font-bold text-[#2a3439]">
+                        {upload.title || upload.filename}
+                      </p>
+                      <p className="text-[9px] text-slate-400">
+                        {upload.chunk_count} chunks · {formatUploadTime(upload.created_at)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="max-w-[140px] truncate text-[11px] font-bold text-[#2a3439]">
-                      {upload.name}
-                    </p>
-                    <p className="text-[9px] text-slate-400">
-                      {upload.size} · {upload.time}
-                    </p>
-                  </div>
+                  <span className={`text-[9px] font-bold uppercase tracking-tight ${
+                    upload.status === "indexed" ? "text-[#0053dc]" : "text-amber-600"
+                  }`}>
+                    {ingestionStatus(upload.status)}
+                  </span>
                 </div>
-                <span className="text-[9px] font-bold uppercase tracking-tight text-[#0053dc]">
-                  Complete
-                </span>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-xs text-slate-400">No uploads yet.</p>
+            )}
           </div>
         </div>
 

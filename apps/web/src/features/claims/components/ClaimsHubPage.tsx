@@ -1,4 +1,6 @@
-import type { ClaimRecordSummary, ClaimsFilter } from "../../../shared/api/claims";
+import { useEffect, useState } from "react";
+import { fetchClaimById } from "../../../shared/api/claims";
+import type { ClaimDetailResponse, ClaimRecordSummary, ClaimsFilter } from "../../../shared/api/claims";
 
 type ClaimsHubPageProps = {
   claims: ClaimRecordSummary[];
@@ -62,6 +64,7 @@ const demoRows: HubRow[] = [
     outcome: "approve",
     confidence_score: 0.982,
     requires_human_review: false,
+    review_status: null,
     serviceType: "Orthopedic Surgery",
     claimantInitials: "JD",
     displayDate: "Mar 24, 2026",
@@ -78,6 +81,7 @@ const demoRows: HubRow[] = [
     outcome: "deny",
     confidence_score: 0.94,
     requires_human_review: false,
+    review_status: null,
     serviceType: "Cardiac Imaging",
     claimantInitials: "SK",
     displayDate: "Mar 23, 2026",
@@ -94,6 +98,7 @@ const demoRows: HubRow[] = [
     outcome: "review",
     confidence_score: 0.628,
     requires_human_review: true,
+    review_status: "in_review",
     serviceType: "Physical Therapy",
     claimantInitials: "MR",
     displayDate: "Mar 23, 2026",
@@ -110,6 +115,7 @@ const demoRows: HubRow[] = [
     outcome: "approve",
     confidence_score: 0.914,
     requires_human_review: false,
+    review_status: null,
     serviceType: "Gastroenterology",
     claimantInitials: "AL",
     displayDate: "Mar 22, 2026",
@@ -126,6 +132,7 @@ const demoRows: HubRow[] = [
     outcome: "approve",
     confidence_score: 0.967,
     requires_human_review: false,
+    review_status: null,
     serviceType: "Neurological Eval",
     claimantInitials: "TB",
     displayDate: "Mar 22, 2026",
@@ -142,6 +149,7 @@ const demoRows: HubRow[] = [
     outcome: "deny",
     confidence_score: 0.891,
     requires_human_review: false,
+    review_status: null,
     serviceType: "Dermatology Path",
     claimantInitials: "PK",
     displayDate: "Mar 21, 2026",
@@ -151,7 +159,85 @@ const demoRows: HubRow[] = [
 
 export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange, onOpenClaim }: ClaimsHubPageProps) {
   const rows = claims.length ? buildRows(claims) : demoRows;
-  const selectedClaim = rows.find((r) => r.claim_id === selectedClaimId) ?? rows[0] ?? null;
+
+  // Sidebar state — tracks which row is "focused" for the detail preview
+  const [activeRowId, setActiveRowId] = useState<string | null>(selectedClaimId);
+  const [sidebarDetail, setSidebarDetail] = useState<ClaimDetailResponse | null>(null);
+  const [isSidebarLoading, setIsSidebarLoading] = useState(false);
+
+  const resolvedActiveRowId = activeRowId ?? selectedClaimId ?? rows[0]?.claim_id ?? null;
+  const activeRow = rows.find((r) => r.claim_id === resolvedActiveRowId) ?? rows[0] ?? null;
+
+  useEffect(() => {
+    if (!rows.length) {
+      setActiveRowId(null);
+      setSidebarDetail(null);
+      setIsSidebarLoading(false);
+      return;
+    }
+
+    const activeStillExists = activeRowId
+      ? rows.some((row) => row.claim_id === activeRowId)
+      : false;
+    const nextClaimId = activeStillExists
+      ? activeRowId
+      : selectedClaimId ?? rows[0]?.claim_id ?? null;
+
+    if (nextClaimId !== activeRowId) {
+      setActiveRowId(nextClaimId);
+    }
+
+    if (!nextClaimId || nextClaimId.startsWith("#")) {
+      setSidebarDetail(null);
+      setIsSidebarLoading(false);
+      return;
+    }
+
+    if (sidebarDetail?.claim.claim_id === nextClaimId) {
+      return;
+    }
+
+    let isCancelled = false;
+    setSidebarDetail(null);
+    setIsSidebarLoading(true);
+
+    void fetchClaimById(nextClaimId)
+      .then((detail) => {
+        if (!isCancelled) {
+          setSidebarDetail(detail);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setSidebarDetail(null);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsSidebarLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [rows, selectedClaimId, activeRowId, sidebarDetail?.claim.claim_id]);
+
+  async function handleRowSelect(claim: HubRow) {
+    if (claim.claim_id.startsWith("#")) return; // demo row — no backend data
+    if (claim.claim_id === activeRowId) return;
+    setActiveRowId(claim.claim_id);
+    setSidebarDetail(null);
+    setIsSidebarLoading(true);
+    try {
+      const detail = await fetchClaimById(claim.claim_id);
+      setSidebarDetail(detail);
+    } catch {
+      // silent — sidebar falls back to summary row data
+    } finally {
+      setIsSidebarLoading(false);
+    }
+  }
 
   const PAGE_SIZE = filter.limit ?? 20;
   const currentOffset = filter.offset ?? 0;
@@ -235,20 +321,20 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
         {/* Rows */}
         <div className="divide-y divide-slate-50">
           {rows.map((claim) => {
-            const isSelected = selectedClaim?.claim_id === claim.claim_id;
+            const isActive = (activeRowId ?? selectedClaimId) === claim.claim_id;
             const isDemo = claim.claim_id.startsWith("#");
             return (
               <button
                 className={`grid w-full grid-cols-[1.1fr_1.6fr_1.35fr_1fr_1.1fr_1fr] gap-4 bg-white px-6 py-5 text-left transition-colors ${
-                  isSelected
+                  isActive
                     ? "shadow-[inset_3px_0_0_0_#0053dc] bg-[#f9fbff]"
                     : isDemo
                       ? "cursor-default opacity-70"
                       : "hover:bg-[#fbfdff]"
                 }`}
                 key={claim.claim_id}
-                onClick={() => !isDemo && onOpenClaim(claim.claim_id)}
-                title={isDemo ? "Process a real claim via Policy Manager to interact with this row" : undefined}
+                onClick={() => !isDemo && void handleRowSelect(claim)}
+                title={isDemo ? "Process a real claim via Intake to interact with this row" : undefined}
                 type="button"
               >
                 <p className="text-[13px] font-bold text-[#0053dc]">{claim.claim_id}</p>
@@ -341,7 +427,9 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
           <h3 className="font-display text-[11px] font-extrabold uppercase tracking-widest text-slate-700">
             Decision Summary
           </h3>
-          <span className="text-lg text-slate-300">×</span>
+          {isSidebarLoading && (
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-[#0053dc] border-t-transparent" />
+          )}
         </div>
 
         <div className="space-y-6 px-5 py-5">
@@ -352,11 +440,11 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
             </p>
             <div className="mt-3 bg-[#f7f9fb] px-4 py-4">
               <p className="font-display text-xl font-extrabold tracking-tight text-[#2a3439]">
-                {selectedClaim?.claim_id ?? "No Claim"}
+                {activeRow?.claim_id ?? "No Claim"}
               </p>
               <p className="mt-1 text-[12px] text-slate-500">
-                {selectedClaim
-                  ? `${selectedClaim.member_name} · ${selectedClaim.serviceType}`
+                {activeRow
+                  ? `${activeRow.member_name} · ${activeRow.serviceType}`
                   : "Select a claim from the hub"}
               </p>
             </div>
@@ -371,8 +459,13 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
               </p>
             </div>
             <div className="border-l-2 border-[#0053dc] bg-[#f7f9ff] px-4 py-3 text-[13px] leading-6 text-[#0053dc]">
-              Procedure coding aligns with documented clinical evidence and the applicable coverage pathway.
-              Medical necessity criteria are fully met for this claim profile.
+              {sidebarDetail?.decision.rationale
+                ? sidebarDetail.decision.rationale
+                : activeRow?.claim_id.startsWith("#")
+                  ? "Select a live claim to load AI reasoning."
+                  : isSidebarLoading
+                    ? "Loading…"
+                    : "Rationale unavailable."}
             </div>
           </section>
 
@@ -381,55 +474,73 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
             <p className="mb-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-700">
               Policy References
             </p>
-            <div className="space-y-3 text-[12px]">
-              <div>
-                <p className="font-semibold text-[#2a3439]">Standard Adjudication Rule v4.2</p>
-                <p className="text-slate-400">Section 4.1.2 · Surgical Necessity</p>
+            {sidebarDetail?.matched_policies?.length ? (
+              <div className="space-y-3 text-[12px]">
+                {sidebarDetail.matched_policies.slice(0, 2).map((p) => (
+                  <div key={p.policy_id}>
+                    <p className="font-semibold text-[#2a3439]">{p.title}</p>
+                    <p className="text-slate-400">
+                      {Math.round(p.relevance_score * 100)}% relevance
+                      {p.summary ? ` · ${p.summary.slice(0, 60)}…` : ""}
+                    </p>
+                  </div>
+                ))}
               </div>
-              <div>
-                <p className="font-semibold text-[#2a3439]">Provider Contract Addendum</p>
-                <p className="text-slate-400">Tier-1 Preferred Network Pricing</p>
-              </div>
-            </div>
+            ) : (
+              <p className="text-[12px] text-slate-400">
+                {activeRow?.claim_id.startsWith("#") || isSidebarLoading
+                  ? "—"
+                  : "No policy matches found."}
+              </p>
+            )}
           </section>
 
-          {/* Verification Steps */}
+          {/* Validation */}
           <section>
             <p className="mb-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-700">
-              Verification Steps
+              Validation
             </p>
-            <div className="space-y-3 text-[13px]">
-              {["Identity Verified", "Eligibility Confirmed", "Prior Auth Check"].map((step) => (
-                <div className="flex items-center justify-between text-slate-600" key={step}>
-                  <span>{step}</span>
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0053dc] text-[10px] text-white">
-                    ✓
+            {sidebarDetail ? (
+              <div className="space-y-2.5 text-[13px]">
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>All fields valid</span>
+                  <span
+                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] text-white ${sidebarDetail.validation.is_valid ? "bg-[#0053dc]" : "bg-[#c94b41]"}`}
+                  >
+                    {sidebarDetail.validation.is_valid ? "✓" : "✗"}
                   </span>
                 </div>
-              ))}
-            </div>
+                {sidebarDetail.validation.issues.slice(0, 2).map((issue) => (
+                  <div className="text-[11px] text-amber-600" key={issue.code}>
+                    {issue.message}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[12px] text-slate-400">—</p>
+            )}
           </section>
 
           {/* Actions */}
-          {selectedClaim && selectedClaim.claim_id.startsWith("#") ? (
+          {activeRow && activeRow.claim_id.startsWith("#") ? (
             <p className="rounded-sm bg-slate-50 px-4 py-3 text-center text-[11px] text-slate-400">
               Process a real claim via{" "}
-              <span className="font-semibold text-[#0053dc]">Policy Manager</span> to enable actions.
+              <span className="font-semibold text-[#0053dc]">Intake</span> to enable actions.
             </p>
           ) : (
             <div className="space-y-2 pt-1">
               <button
                 className="w-full rounded-sm bg-gradient-to-br from-[#0053dc] to-[#0049c2] py-3 text-[12px] font-bold tracking-tight text-white shadow-[0_4px_12px_rgba(0,83,220,0.18)] disabled:opacity-50"
-                disabled={!selectedClaim}
-                onClick={() => selectedClaim && onOpenClaim(selectedClaim.claim_id)}
+                disabled={!activeRow}
+                onClick={() => activeRow && onOpenClaim(activeRow.claim_id)}
                 type="button"
               >
                 Open &amp; Review Claim
               </button>
               <button
                 className="w-full rounded-sm border border-slate-200 py-3 text-[12px] font-bold tracking-tight text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                disabled={!selectedClaim}
-                onClick={() => selectedClaim && onOpenClaim(selectedClaim.claim_id)}
+                disabled={!activeRow}
+                onClick={() => activeRow && onOpenClaim(activeRow.claim_id)}
                 type="button"
               >
                 Manual Override

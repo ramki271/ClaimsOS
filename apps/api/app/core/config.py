@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: Optional[str] = None
+    openai_api_key: str = ""
+    openai_embedding_model: str = "text-embedding-3-large"
+    openai_claim_intake_model: str = "gpt-4o-mini"
+    openai_vector_store_prefix: str = "claimsos-policies"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -30,6 +34,10 @@ class Settings(BaseSettings):
     @property
     def has_supabase(self) -> bool:
         return bool(self.supabase_url and self.supabase_anon_key)
+
+    @property
+    def has_openai(self) -> bool:
+        return bool(self.openai_api_key)
 
 
 @lru_cache

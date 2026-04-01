@@ -48,6 +48,30 @@ class PoliciesRepository:
         )
         return PolicyDocumentRecord(**row)
 
+    def update_document(
+        self,
+        *,
+        document_id: str,
+        status: str | None = None,
+        metadata: dict | None = None,
+        chunk_count: int | None = None,
+    ) -> PolicyDocumentRecord:
+        payload: dict[str, Any] = {}
+        if status is not None:
+            payload["status"] = status
+        if metadata is not None:
+            payload["metadata"] = metadata
+        if chunk_count is not None:
+            payload["chunk_count"] = chunk_count
+        row = (
+            self.client.table("policy_documents")
+            .update(payload)
+            .eq("id", document_id)
+            .execute()
+            .data[0]
+        )
+        return PolicyDocumentRecord(**row)
+
     def replace_chunks(
         self,
         *,
@@ -93,6 +117,20 @@ class PoliciesRepository:
             )
             for row in rows
         ]
+
+    def list_document_records(self, *, tenant_id: str | None = None, limit: int = 500) -> list[PolicyDocumentRecord]:
+        query = self.client.table("policy_documents").select("*").order("created_at", desc=True).limit(limit)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        rows = query.execute().data
+        return [PolicyDocumentRecord(**row) for row in rows]
+
+    def count_chunks(self, *, tenant_id: str | None = None) -> int:
+        query = self.client.table("policy_chunks").select("id", count="exact")
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        result = query.execute()
+        return int(getattr(result, "count", 0) or 0)
 
     def retrieve_chunks(self, *, tenant_id: str, limit: int = 25) -> list[dict]:
         return (

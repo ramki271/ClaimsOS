@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from datetime import date
 import re
 from typing import Any
 
 from fastapi import Depends
 
 from app.domain.providers.models import ProviderCreateRequest, ProviderRecord, Tenant
-from app.integrations.supabase import get_supabase_client
+from app.integrations.supabase import execute_with_retry, get_supabase_client
 
 
 def _slugify(value: str) -> str:
@@ -19,14 +20,25 @@ class ProvidersRepository:
 
     def get_tenant_by_key(self, tenant_key: str) -> Tenant | None:
         rows = (
-            self.client.table("tenants")
-            .select("*")
-            .eq("tenant_key", tenant_key)
-            .limit(1)
-            .execute()
-            .data
+            execute_with_retry(
+                self.client.table("tenants")
+                .select("*")
+                .eq("tenant_key", tenant_key)
+                .limit(1)
+            ).data
         )
         return Tenant(**rows[0]) if rows else None
+
+    def get_provider_by_id(self, provider_id: str) -> ProviderRecord | None:
+        rows = (
+            execute_with_retry(
+                self.client.table("providers")
+                .select("*")
+                .eq("id", provider_id)
+                .limit(1)
+            ).data
+        )
+        return self._map_provider_row(rows[0]) if rows else None
 
     def ensure_tenant(self, *, payer_name: str) -> Tenant:
         tenant_key = _slugify(payer_name)
@@ -35,27 +47,54 @@ class ProvidersRepository:
             tenant_row = tenant.model_dump(mode="json")
         else:
             tenant_row = (
-            self.client.table("tenants")
-            .upsert(
+                execute_with_retry(
+                    self.client.table("tenants")
+                    .upsert(
+                        {
+                            "tenant_key": tenant_key,
+                            "tenant_type": "payer",
+                            "name": payer_name,
+                            "metadata": {},
+                        },
+                        on_conflict="tenant_key",
+                    )
+                ).data[0]
+            )
+        execute_with_retry(
+            self.client.table("payer_organizations").upsert(
                 {
-                    "tenant_key": tenant_key,
-                    "tenant_type": "payer",
-                    "name": payer_name,
+                    "tenant_id": tenant_row["id"],
+                    "payer_code": tenant_key,
+                    "display_name": payer_name,
                 },
-                on_conflict="tenant_key",
+                on_conflict="tenant_id,payer_code",
             )
-            .execute()
-            .data[0]
-            )
-        self.client.table("payer_organizations").upsert(
-            {
-                "tenant_id": tenant_row["id"],
-                "payer_code": tenant_key,
-                "display_name": payer_name,
-            },
-            on_conflict="tenant_id,payer_code",
-        ).execute()
+        )
         return Tenant(**tenant_row)
+
+    def set_tenant_vector_store_id(self, *, tenant_id: str, vector_store_id: str) -> Tenant:
+        rows = (
+            execute_with_retry(
+                self.client.table("tenants")
+                .select("*")
+                .eq("id", tenant_id)
+                .limit(1)
+            ).data
+        )
+        if not rows:
+            raise ValueError(f"Tenant {tenant_id} not found.")
+
+        row = rows[0]
+        metadata = row.get("metadata") or {}
+        metadata["openai_vector_store_id"] = vector_store_id
+        updated = (
+            execute_with_retry(
+                self.client.table("tenants")
+                .update({"metadata": metadata})
+                .eq("id", tenant_id)
+            ).data[0]
+        )
+        return Tenant(**updated)
 
     def ensure_provider_for_tenant(
         self,
@@ -68,39 +107,44 @@ class ProvidersRepository:
     ) -> ProviderRecord:
         provider_key = provider_id or _slugify(provider_name)
         row = (
-            self.client.table("providers")
-            .upsert(
-                {
-                    "tenant_id": tenant_id,
-                    "provider_key": provider_key,
-                    "npi": npi,
-                    "name": provider_name,
-                    "specialty": specialty,
-                    "network_status": "in_network",
-                    "active": True,
-                },
-                on_conflict="tenant_id,provider_key",
-            )
-            .execute()
-            .data[0]
+            execute_with_retry(
+                self.client.table("providers")
+                .upsert(
+                    {
+                        "tenant_id": tenant_id,
+                        "provider_key": provider_key,
+                        "npi": npi,
+                        "name": provider_name,
+                        "specialty": specialty,
+                        "network_status": "in_network",
+                        "contract_tier": None,
+                        "active": True,
+                        "metadata": {
+                            "contract_status": "active",
+                            "plan_participation": [],
+                        },
+                    },
+                    on_conflict="tenant_id,provider_key",
+                )
+            ).data[0]
         )
-        return ProviderRecord(**row)
+        return self._map_provider_row(row)
 
     def list_providers(self, *, tenant_key: str | None = None, limit: int = 100) -> list[ProviderRecord]:
         query = self.client.table("providers").select("*, tenants!inner(tenant_key)").order("created_at", desc=True).limit(limit)
         if tenant_key:
             query = query.eq("tenants.tenant_key", tenant_key)
-        rows = query.execute().data
-        return [ProviderRecord(**{k: v for k, v in row.items() if k != "tenants"}) for row in rows]
+        rows = execute_with_retry(query).data
+        return [self._map_provider_row({k: v for k, v in row.items() if k != "tenants"}) for row in rows]
 
     def create_provider(self, request: ProviderCreateRequest) -> ProviderRecord:
         tenant_rows = (
-            self.client.table("tenants")
-            .select("*")
-            .eq("tenant_key", request.tenant_key)
-            .limit(1)
-            .execute()
-            .data
+            execute_with_retry(
+                self.client.table("tenants")
+                .select("*")
+                .eq("tenant_key", request.tenant_key)
+                .limit(1)
+            ).data
         )
         if not tenant_rows:
             tenant = self.ensure_tenant(payer_name=request.tenant_key.replace("-", " ").title())
@@ -109,27 +153,61 @@ class ProvidersRepository:
             tenant_id = tenant_rows[0]["id"]
 
         row = (
-            self.client.table("providers")
-            .upsert(
-                {
-                    "tenant_id": tenant_id,
-                    "provider_key": request.provider_key,
-                    "npi": request.npi,
-                    "tin": request.tin,
-                    "name": request.name,
-                    "specialty": request.specialty,
-                    "network_status": request.network_status,
-                    "contract_tier": request.contract_tier,
-                    "active": request.active,
-                    "metadata": request.metadata,
-                },
-                on_conflict="tenant_id,provider_key",
-            )
-            .execute()
-            .data[0]
+            execute_with_retry(
+                self.client.table("providers")
+                .upsert(
+                    {
+                        "tenant_id": tenant_id,
+                        "provider_key": request.provider_key,
+                        "npi": request.npi,
+                        "tin": request.tin,
+                        "name": request.name,
+                        "specialty": request.specialty,
+                        "network_status": request.network_status,
+                        "contract_tier": request.contract_tier,
+                        "active": request.active,
+                        "metadata": {
+                            **request.metadata,
+                            "contract_status": request.contract_status,
+                            "network_effective_date": (
+                                request.network_effective_date.isoformat()
+                                if request.network_effective_date
+                                else None
+                            ),
+                            "network_end_date": (
+                                request.network_end_date.isoformat()
+                                if request.network_end_date
+                                else None
+                            ),
+                            "plan_participation": request.plan_participation,
+                        },
+                    },
+                    on_conflict="tenant_id,provider_key",
+                )
+            ).data[0]
         )
-        return ProviderRecord(**row)
+        return self._map_provider_row(row)
+
+    def _map_provider_row(self, row: dict[str, Any]) -> ProviderRecord:
+        metadata = row.get("metadata") or {}
+        base_row = {k: v for k, v in row.items() if k != "metadata"}
+        return ProviderRecord(
+            **base_row,
+            contract_status=metadata.get("contract_status", "active"),
+            network_effective_date=_parse_optional_date(metadata.get("network_effective_date")),
+            network_end_date=_parse_optional_date(metadata.get("network_end_date")),
+            plan_participation=list(metadata.get("plan_participation") or []),
+            metadata=metadata,
+        )
 
 
 def get_providers_repository() -> ProvidersRepository:
     return ProvidersRepository(get_supabase_client())
+
+
+def _parse_optional_date(value: Any) -> date | None:
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))

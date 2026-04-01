@@ -5,9 +5,15 @@ export type Provider = {
   tenant_key: string;
   provider_key: string;
   name: string;
-  npi: string;
-  specialty: string;
-  network_status: "in_network" | "out_of_network";
+  npi?: string | null;
+  tin?: string | null;
+  specialty?: string | null;
+  network_status: "in_network" | "out_of_network" | "pending";
+  contract_tier?: string | null;
+  contract_status?: "active" | "inactive" | "pending";
+  network_effective_date?: string | null;
+  network_end_date?: string | null;
+  plan_participation?: string[];
 };
 
 export type ProviderCreateRequest = Omit<Provider, "id">;
