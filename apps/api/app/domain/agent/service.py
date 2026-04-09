@@ -8,7 +8,7 @@ from typing import Any, Optional
 from fastapi import Depends
 
 from app.core.config import Settings, get_settings
-from app.domain.agent.models import AgentChatContext
+from app.domain.agent.models import AgentChatContext, AgentChatResponse, AgentClaimLink
 from app.domain.claims.models import ClaimProcessingResponse, ClaimSubmission
 from app.domain.claims.policy_retrieval_service import PolicyRetrievalService
 from app.domain.claims.repository import ClaimsRepository, get_claims_repository
@@ -36,16 +36,22 @@ class AgentChatService:
         self.policies_repository = policies_repository
         self.policy_retrieval_service = PolicyRetrievalService()
 
-    def answer(self, *, message: str, context: AgentChatContext) -> str:
+    def answer(self, *, message: str, context: AgentChatContext) -> AgentChatResponse:
         text = (message or "").strip()
         if not text:
-            return "I don't have enough context to answer that yet. Try asking about a claim, member, provider, or policy."
+            return AgentChatResponse(
+                reply="I don't have enough context to answer that yet. Try asking about a claim, member, provider, or policy."
+            )
 
         gathered = self._gather_context(message=text, context=context)
+        claim_links = self._build_claim_links(message=text, gathered=gathered)
         reply = self._answer_with_openai(message=text, context=context, gathered=gathered)
         if reply:
-            return self._clean_reply(reply)
-        return self._clean_reply(self._fallback_reply(message=text, gathered=gathered))
+            return AgentChatResponse(reply=self._clean_reply(reply), claim_links=claim_links)
+        return AgentChatResponse(
+            reply=self._clean_reply(self._fallback_reply(message=text, gathered=gathered)),
+            claim_links=claim_links,
+        )
 
     def _gather_context(self, *, message: str, context: AgentChatContext) -> dict[str, Any]:
         claim = self._resolve_claim(message=message, context=context)
@@ -336,11 +342,15 @@ class AgentChatService:
             items = review_queue.get("items") or []
             if not items:
                 return "There are no items in the review queue right now."
-            top = items[:3]
+            top = [item for item in items[:5] if item.get("claim_id")]
             summary = "; ".join(
-                f"{item.get('claim_id')}: {item.get('reason')}" for item in top if item.get("claim_id")
+                f"{item.get('claim_id')}: {item.get('reason')}" for item in top
             )
-            return f"There are {review_queue.get('pending_count', 0)} pending review items. Top items: {summary}"
+            return (
+                f"There are {review_queue.get('pending_count', 0)} claims pending review. "
+                f"Open one of the linked claim IDs below to inspect the queue. "
+                f"Current examples: {summary}"
+            )
 
         if policies:
             top = policies[0]
@@ -357,6 +367,26 @@ class AgentChatService:
             token.upper()
             for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9\\.-]{1,}", value or "")
         }
+
+    def _build_claim_links(self, *, message: str, gathered: dict[str, Any]) -> list[AgentClaimLink]:
+        lower = (message or "").lower()
+        queue_words = ("pending review", "review queue", "flagged claims", "flagged", "claims pending review")
+        if not any(term in lower for term in queue_words):
+            return []
+
+        items = (gathered.get("review_queue") or {}).get("items") or []
+        links: list[AgentClaimLink] = []
+        seen: set[str] = set()
+        for item in items:
+            claim_id = item.get("claim_id")
+            if not claim_id or claim_id in seen:
+                continue
+            seen.add(claim_id)
+            reason = item.get("reason") or "Open claim detail"
+            links.append(AgentClaimLink(claim_id=claim_id, label=reason))
+            if len(links) >= 5:
+                break
+        return links
 
     def _clean_reply(self, value: str) -> str:
         text = (value or "").strip()

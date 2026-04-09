@@ -13,5 +13,11 @@ class AgentChatRequest(BaseModel):
     context: AgentChatContext = Field(default_factory=AgentChatContext)
 
 
+class AgentClaimLink(BaseModel):
+    claim_id: str
+    label: Optional[str] = None
+
+
 class AgentChatResponse(BaseModel):
     reply: str
+    claim_links: list[AgentClaimLink] = Field(default_factory=list)

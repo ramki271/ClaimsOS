@@ -54,6 +54,7 @@ type PolicyManagerPageProps = {
   lastPolicyUpload: PolicyUploadResponse | null;
   metrics: PolicyMetricsResponse | null;
   onUploadPolicy: (file: File, payerName: string, classification: string) => Promise<void>;
+  onOpenKnowledgeStudio: () => void;
 };
 
 type RetrievalBadgeState = {
@@ -118,6 +119,7 @@ export function PolicyManagerPage({
   lastPolicyUpload,
   metrics,
   onUploadPolicy,
+  onOpenKnowledgeStudio,
 }: PolicyManagerPageProps) {
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -494,9 +496,10 @@ export function PolicyManagerPage({
             <div className="mt-8 border-t border-white/10 pt-6">
               <button
                 className="w-full rounded-sm border border-white/5 bg-slate-800 py-2.5 text-[10px] font-bold uppercase tracking-widest text-white transition-colors hover:bg-slate-700"
+                onClick={onOpenKnowledgeStudio}
                 type="button"
               >
-                Open Knowledge Studio
+                Open Knowledge Studio →
               </button>
             </div>
           </div>

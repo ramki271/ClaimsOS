@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { chatWithAgent } from "../../../shared/api/agent";
+import { chatWithAgent, type AgentClaimLink } from "../../../shared/api/agent";
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -10,12 +10,14 @@ type Message = {
   id: number;
   role: Role;
   content: string;
+  claimLinks?: AgentClaimLink[];
   ts: Date;
 };
 
 type Props = {
   activeView: string;
   claimId?: string | null;
+  onOpenClaim?: (claimId: string) => void;
 };
 
 function formatAgentContent(content: string): string[] {
@@ -103,7 +105,7 @@ const WELCOME: Message = {
   ts: new Date(),
 };
 
-export function AgentChatWidget({ activeView, claimId }: Props) {
+export function AgentChatWidget({ activeView, claimId, onOpenClaim }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
@@ -111,9 +113,8 @@ export function AgentChatWidget({ activeView, claimId }: Props) {
   const [hasUnread, setHasUnread] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const claimScopedViews = new Set(["detail", "claims"]);
-  const effectiveClaimId = claimScopedViews.has(activeView) ? claimId : null;
-  const prompts = suggestedPrompts(activeView, claimId);
+  const effectiveClaimId = activeView === "detail" ? claimId : null;
+  const prompts = suggestedPrompts(activeView, effectiveClaimId);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -143,7 +144,13 @@ export function AgentChatWidget({ activeView, claimId }: Props) {
         message: trimmed,
         context: { active_view: activeView, claim_id: effectiveClaimId },
       });
-      const agentMsg: Message = { id: nextId(), role: "agent", content: res.reply, ts: new Date() };
+      const agentMsg: Message = {
+        id: nextId(),
+        role: "agent",
+        content: res.reply,
+        claimLinks: res.claim_links ?? [],
+        ts: new Date(),
+      };
       setMessages((prev) => [...prev, agentMsg]);
       if (!isOpen) setHasUnread(true);
     } catch {
@@ -279,6 +286,25 @@ export function AgentChatWidget({ activeView, claimId }: Props) {
                             </div>
                           );
                         })}
+                        {!!msg.claimLinks?.length && (
+                          <div className="pt-1">
+                            <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                              Quick claim links
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {msg.claimLinks.map((link) => (
+                                <button
+                                  key={`${msg.id}-${link.claim_id}`}
+                                  className="rounded-full border border-[#0053dc]/20 bg-[#eef4ff] px-2.5 py-1 text-[10px] font-semibold text-[#0053dc] transition-colors hover:bg-[#0053dc] hover:text-white"
+                                  onClick={() => onOpenClaim?.(link.claim_id)}
+                                  type="button"
+                                >
+                                  {link.claim_id}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       msg.content

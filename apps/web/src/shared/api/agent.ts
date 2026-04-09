@@ -8,8 +8,14 @@ export type AgentChatRequest = {
   };
 };
 
+export type AgentClaimLink = {
+  claim_id: string;
+  label?: string | null;
+};
+
 export type AgentChatResponse = {
   reply: string;
+  claim_links: AgentClaimLink[];
 };
 
 export async function chatWithAgent(req: AgentChatRequest): Promise<AgentChatResponse> {

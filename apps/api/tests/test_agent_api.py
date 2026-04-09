@@ -30,10 +30,14 @@ class FakeAgentChatService:
         self.should_fail = should_fail
 
     def answer(self, *, message: str, context) -> str:
+        from app.domain.agent.models import AgentChatResponse
+
         if self.should_fail:
             raise RuntimeError("boom")
         claim_id = context.claim_id or "unknown"
-        return f"Claim {claim_id} is in review because prior authorization is missing."
+        return AgentChatResponse(
+            reply=f"Claim {claim_id} is in review because prior authorization is missing."
+        )
 
 
 def test_agent_chat_returns_reply() -> None:
@@ -50,6 +54,7 @@ def test_agent_chat_returns_reply() -> None:
     assert response.status_code == 200
     assert "reply" in body
     assert "CLM-001" in body["reply"]
+    assert body["claim_links"] == []
 
     app.dependency_overrides.pop(get_agent_chat_service, None)
 
@@ -68,6 +73,7 @@ def test_agent_chat_returns_graceful_reply_on_failure() -> None:
     assert response.status_code == 200
     assert "reply" in body
     assert "don't have enough context" in body["reply"].lower()
+    assert body["claim_links"] == []
 
     app.dependency_overrides.pop(get_agent_chat_service, None)
 
@@ -101,7 +107,15 @@ class FakeClaimsRepository:
                 network_parity=InsightCard(label="Network Parity", value="Tier 1", status="verified", score=0.9),
             ),
         )
-        self.client = _FakeSupabaseClient()
+        self.client = _FakeSupabaseClient(
+            {
+                "claims": [],
+                "human_review_queue": [
+                    {"status": "pending", "reason": "Missing prior authorization.", "claims": {"claim_id": "CLM-X12-PRIORAUTH-2003"}},
+                    {"status": "pending", "reason": "Referral is missing.", "claims": {"claim_id": "CLM-X12-REFERRAL-2002"}},
+                ],
+            }
+        )
 
     def get_claim(self, claim_id: str):
         return self.record if claim_id == self.record.claim.claim_id else None
@@ -195,8 +209,11 @@ class _FakeQuery:
 
 
 class _FakeSupabaseClient:
-    def table(self, _name: str):
-        return _FakeQuery([])
+    def __init__(self, tables=None):
+        self._tables = tables or {}
+
+    def table(self, name: str):
+        return _FakeQuery(self._tables.get(name, []))
 
 
 def test_agent_service_prefers_explicit_member_over_active_claim_context() -> None:
@@ -233,3 +250,23 @@ def test_agent_service_cleans_reply_formatting() -> None:
     assert "Coverage" in cleaned
     assert "- Prior auth missing" in cleaned
     assert "- Review claim - now" in cleaned
+
+
+def test_agent_service_returns_claim_links_for_review_queue_questions() -> None:
+    service = AgentChatService(
+        settings=get_settings(),
+        claims_repository=FakeClaimsRepository(),
+        members_repository=FakeMembersRepository(),
+        providers_repository=FakeProvidersRepository(),
+        policies_repository=FakePoliciesRepository(),
+    )
+
+    result = service.answer(
+        message="How many claims are pending review?",
+        context=AgentChatContext(active_view="claims"),
+    )
+
+    assert [item.claim_id for item in result.claim_links] == [
+        "CLM-X12-PRIORAUTH-2003",
+        "CLM-X12-REFERRAL-2002",
+    ]

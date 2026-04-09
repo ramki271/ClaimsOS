@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { AgentChatWidget } from "../features/agent/components/AgentChatWidget";
 import { AdjudicationPage } from "../features/adjudication/components/AdjudicationPage";
+import { LoginPage } from "../features/auth/components/LoginPage";
+import { KnowledgeStudioPage } from "../features/knowledge/components/KnowledgeStudioPage";
 import { ClaimsHubPage } from "../features/claims/components/ClaimsHubPage";
 import { IntakePolicyPage } from "../features/intake/components/IntakePolicyPage";
 import { MembersPage } from "../features/members/components/MembersPage";
@@ -76,9 +78,10 @@ const fallbackClaim: ClaimSubmission = {
   date_of_service: "2026-03-01",
 };
 
-type ViewId = "dashboard" | "claims" | "intake" | "policy" | "providers" | "members" | "reports" | "detail";
+type ViewId = "dashboard" | "claims" | "intake" | "policy" | "providers" | "members" | "reports" | "detail" | "knowledge";
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
   const [demoClaim, setDemoClaim] = useState<ClaimSubmission | null>(null);
   const [claimDraft, setClaimDraft] = useState(JSON.stringify(fallbackClaim, null, 2));
@@ -308,9 +311,13 @@ export default function App() {
     await loadPolicies();
   }
 
+  if (!isAuthenticated) {
+    return <LoginPage onLogin={() => setIsAuthenticated(true)} />;
+  }
+
   return (
     <>
-    <AppShell activeView={activeView} setActiveView={setActiveView}>
+    <AppShell activeView={activeView} setActiveView={setActiveView} onLogout={() => { setIsAuthenticated(false); setActiveView("dashboard"); }}>
       {activeView === "dashboard" && (
         <OverviewPage claims={claims} onSelectClaim={handleSelectClaim} />
       )}
@@ -345,6 +352,7 @@ export default function App() {
           lastPolicyUpload={lastPolicyUpload}
           metrics={policyMetrics}
           onUploadPolicy={handleUploadPolicy}
+          onOpenKnowledgeStudio={() => setActiveView("knowledge")}
           policies={policies}
         />
       )}
@@ -365,6 +373,7 @@ export default function App() {
         />
       )}
       {activeView === "reports" && <ReportsPage claims={claims} />}
+      {activeView === "knowledge" && <KnowledgeStudioPage />}
       {activeView === "detail" && (
         <AdjudicationPage
           onBackToClaims={() => setActiveView("claims")}
@@ -374,7 +383,7 @@ export default function App() {
         />
       )}
     </AppShell>
-    <AgentChatWidget activeView={activeView} claimId={selectedClaimId} />
+      <AgentChatWidget activeView={activeView} claimId={selectedClaimId} onOpenClaim={handleSelectClaim} />
     </>
   );
 }
