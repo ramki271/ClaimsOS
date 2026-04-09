@@ -17,6 +17,7 @@ from app.domain.claims.models import (
     X12BatchClaimResult,
     X12BatchUploadResponse,
 )
+from app.domain.claims.payer_verification_service import PayerVerificationService
 from app.domain.claims.policy_retrieval_service import PolicyRetrievalService
 from app.domain.claims.repository import ClaimsRepository, get_claims_repository
 from app.domain.claims.validation_service import ValidationService
@@ -31,6 +32,7 @@ adjudication_service = AdjudicationService()
 confidence_service = ConfidenceService()
 x12_parser = X12ProfessionalClaimParser()
 document_intake_service = ClaimDocumentIntakeService()
+payer_verification_service = PayerVerificationService()
 
 
 def _run_claim_processing(
@@ -47,19 +49,26 @@ def _run_claim_processing(
     build_provider_context = getattr(repository, "_build_provider_context", None)
     if providers_repository is not None and callable(build_provider_context):
         tenant = providers_repository.ensure_tenant(payer_name=normalized_claim.payer_name)
+        provider_key = normalized_claim.rendering_provider_id or normalized_claim.provider_id
+        provider_name = normalized_claim.rendering_provider_name or normalized_claim.provider_name
         provider = providers_repository.ensure_provider_for_tenant(
             tenant_id=tenant.id or "",
-            provider_id=normalized_claim.provider_id,
-            provider_name=normalized_claim.provider_name,
+            provider_id=provider_key,
+            provider_name=provider_name,
             specialty=None,
         )
         provider_context = build_provider_context(claim=normalized_claim, provider=provider)
+    payer_verification_context = payer_verification_service.build(
+        normalized_claim,
+        provider_context=provider_context,
+    )
     decision = adjudication_service.adjudicate(
         normalized_claim,
         validation,
         matched_policies,
         provider_context=provider_context,
         utilization_context=utilization_context,
+        payer_verification_context=payer_verification_context,
     )
     confidence_score = confidence_service.score(validation, decision)
     requires_human_review = (
@@ -73,6 +82,7 @@ def _run_claim_processing(
         confidence_score=confidence_score,
         requires_human_review=requires_human_review,
         matched_policies=matched_policies,
+        payer_verification_context=payer_verification_context,
     )
 
 

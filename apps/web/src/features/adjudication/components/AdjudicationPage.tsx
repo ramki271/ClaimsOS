@@ -66,34 +66,50 @@ function AuditTrailPanel({ events }: { events: AuditEvent[] }) {
     return true;
   });
 
+  const outcomeColors: Record<string, string> = {
+    approve: "bg-emerald-50 text-emerald-700",
+    approved: "bg-emerald-50 text-emerald-700",
+    deny: "bg-[#fdeceb] text-[#c94b41]",
+    denied: "bg-[#fdeceb] text-[#c94b41]",
+    review: "bg-amber-50 text-amber-700",
+  };
+
   return (
-    <div className="relative space-y-8 pl-6">
+    <div className="relative space-y-5 pl-6">
       <div className="absolute bottom-1 left-[7px] top-1 w-[1.5px] bg-slate-100" />
-      {deduped.map((event, i) => (
-        <div className="relative" key={i}>
-          <div
-            className={`absolute -left-[23px] top-0 h-3 w-3 rounded-full border-2 border-white ${
-              ACTIVE_EVENTS.has(event.event_type)
-                ? "bg-[#0053dc] ring-4 ring-[#0053dc]/5"
-                : "bg-slate-200"
-            }`}
-          />
-          <p className="mb-1.5 text-[9px] font-extrabold uppercase leading-none tracking-widest text-[#566166]">
-            {formatEventTime(event.created_at)}
-          </p>
-          <p className="text-xs font-bold text-[#2a3439]">{formatEventType(event.event_type)}</p>
-          {typeof event.payload?.outcome === "string" && (
-            <p className="mt-1 text-[11px] text-[#566166]">
-              Outcome: {event.payload.outcome as string}
-            </p>
-          )}
-          {typeof event.payload?.reviewer_notes === "string" && (
-            <p className="mt-1 text-[11px] italic text-[#566166]">
-              "{event.payload.reviewer_notes as string}"
-            </p>
-          )}
-        </div>
-      ))}
+      {deduped.map((event, i) => {
+        const isFirst = i === 0;
+        const timestamp = formatEventTime(event.created_at);
+        const outcome = typeof event.payload?.outcome === "string" ? (event.payload.outcome as string) : null;
+        const reviewerNotes = typeof event.payload?.reviewer_notes === "string" ? (event.payload.reviewer_notes as string) : null;
+        return (
+          <div className="relative" key={i}>
+            <div
+              className={`absolute -left-[23px] top-0.5 rounded-full border-2 border-white ${
+                isFirst
+                  ? "h-3.5 w-3.5 bg-[#0053dc] ring-4 ring-[#0053dc]/10"
+                  : ACTIVE_EVENTS.has(event.event_type)
+                  ? "h-3 w-3 bg-[#0053dc] ring-4 ring-[#0053dc]/5"
+                  : "h-3 w-3 bg-slate-200"
+              }`}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-bold text-[#2a3439]">{formatEventType(event.event_type)}</p>
+              {outcome && (
+                <span className={`rounded-sm px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${outcomeColors[outcome] ?? "bg-slate-100 text-slate-600"}`}>
+                  {outcome}
+                </span>
+              )}
+            </div>
+            {timestamp !== "—" && (
+              <p className="mt-0.5 text-[10px] text-slate-400">{timestamp}</p>
+            )}
+            {reviewerNotes && (
+              <p className="mt-1 text-[11px] italic text-[#566166]">"{reviewerNotes}"</p>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -456,6 +472,62 @@ function AgentWorkflowPanel({ result }: { result: ClaimDetailResponse | null }) 
   const reviewStatus = result.review_state?.status ?? null;
   const isResolved = reviewStatus === "resolved";
 
+  const pvc = result.payer_verification_context;
+
+  // Build validation agent copy — reference eligibility when available
+  const eligibilityStatus = pvc?.eligibility.status;
+  const validationCopy = (() => {
+    const baseIssues = result.validation?.issues?.length ?? 0;
+    const parts: string[] = [];
+    if (eligibilityStatus === "eligible") parts.push("member eligible");
+    else if (eligibilityStatus === "ineligible") parts.push("member ineligible");
+    else if (eligibilityStatus === "manual_review") parts.push("eligibility needs review");
+    if (baseIssues > 0) parts.push(`${baseIssues} validation issue${baseIssues > 1 ? "s" : ""}`);
+    if (parts.length === 0) return "Validated claim fields and member eligibility";
+    return parts.map((p, i) => (i === 0 ? p.charAt(0).toUpperCase() + p.slice(1) : p)).join(" · ");
+  })();
+
+  // Build policy agent copy — reference prior auth and referral
+  const priorAuthStatus = pvc?.prior_authorization.status;
+  const referralStatus = pvc?.referral.status;
+  const policyCopy = (() => {
+    const policyBase = result.matched_policies?.length
+      ? `Retrieved ${result.matched_policies.length} polic${result.matched_policies.length > 1 ? "ies" : "y"}`
+      : "No matching policies found";
+    const authNote =
+      priorAuthStatus === "verified" ? "prior auth verified"
+      : priorAuthStatus === "missing" ? "prior auth missing"
+      : priorAuthStatus === "manual_review" ? "prior auth review"
+      : null;
+    const refNote =
+      referralStatus === "verified" ? "referral verified"
+      : referralStatus === "missing" ? "referral missing"
+      : null;
+    const extras = [authNote, refNote].filter(Boolean).join(", ");
+    return extras ? `${policyBase} · ${extras}` : policyBase;
+  })();
+  const policyStatus = (() => {
+    if (!result.matched_policies?.length) return "escalated" as const;
+    if (priorAuthStatus === "missing" || referralStatus === "missing") return "escalated" as const;
+    return "completed" as const;
+  })();
+
+  // Build adjudication agent copy — reference pricing
+  const pricingStatus = pvc?.pricing.status;
+  const adjudicationCopy = (() => {
+    const base =
+      outcome === "review" ? "Recommended manual review — escalated"
+      : outcome === "approve" ? "Recommended approval"
+      : outcome === "deny" ? "Recommended denial"
+      : "Decision rendered";
+    const priceNote =
+      pricingStatus === "adjusted" ? `allowed $${pvc!.pricing.allowed_amount.toFixed(2)}`
+      : pricingStatus === "manual_review" ? "pricing flagged for review"
+      : pricingStatus === "priced_in_line" ? "pricing in line"
+      : null;
+    return priceNote ? `${base} · ${priceNote}` : base;
+  })();
+
   const steps: AgentPipelineStep[] = [
     {
       label: "AI Intake Agent",
@@ -464,31 +536,17 @@ function AgentWorkflowPanel({ result }: { result: ClaimDetailResponse | null }) 
     },
     {
       label: "AI Validation Agent",
-      copy: result.validation?.is_valid
-        ? "Verified required claim fields"
-        : result.validation?.issues?.length
-        ? `${result.validation.issues.length} issue${result.validation.issues.length > 1 ? "s" : ""} flagged`
-        : "Verified required claim fields",
-      status: "completed",
+      copy: validationCopy,
+      status: eligibilityStatus === "ineligible" || eligibilityStatus === "manual_review" ? "escalated" : "completed",
     },
     {
       label: "AI Policy Agent",
-      copy:
-        result.matched_policies?.length
-          ? `Retrieved ${result.matched_policies.length} matching polic${result.matched_policies.length > 1 ? "ies" : "y"}`
-          : "No matching policies found",
-      status: result.matched_policies?.length ? "completed" : "escalated",
+      copy: policyCopy,
+      status: policyStatus,
     },
     {
       label: "AI Adjudication Agent",
-      copy:
-        outcome === "review"
-          ? "Recommended manual review — escalated"
-          : outcome === "approve"
-          ? "Recommended approval"
-          : outcome === "deny"
-          ? "Recommended denial"
-          : "Decision rendered",
+      copy: adjudicationCopy,
       status: outcome === "review" ? "escalated" : "completed",
     },
     {
@@ -549,6 +607,440 @@ function PipelineStepList({ steps }: { steps: AgentPipelineStep[] }) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// PayerVerificationPanel — eligibility / auth / referral / pricing
+// ─────────────────────────────────────────────────────────────
+type VerifStatus = "ok" | "warn" | "error" | "neutral";
+
+function verificationStatus(status: string): VerifStatus {
+  if (["eligible", "verified", "not_required", "priced_in_line"].includes(status)) return "ok";
+  if (["manual_review", "adjusted"].includes(status)) return "warn";
+  if (["ineligible", "missing"].includes(status)) return "error";
+  return "neutral";
+}
+
+function VerifBadge({ status, label }: { status: string; label?: string }) {
+  const vs = verificationStatus(status);
+  const cls =
+    vs === "ok"
+      ? "bg-emerald-50 text-emerald-700"
+      : vs === "warn"
+      ? "bg-amber-50 text-amber-700"
+      : vs === "error"
+      ? "bg-[#fdeceb] text-[#c94b41]"
+      : "bg-slate-100 text-slate-500";
+  const icon =
+    vs === "ok" ? "check_circle" : vs === "warn" ? "pending" : vs === "error" ? "cancel" : "radio_button_unchecked";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${cls}`}>
+      <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+        {icon}
+      </span>
+      {label ?? status.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+function PayerVerificationPanel({ pvc }: { pvc: NonNullable<ClaimDetailResponse["payer_verification_context"]> }) {
+  const { eligibility, prior_authorization, referral, pricing } = pvc;
+
+  return (
+    <div className="overflow-hidden rounded-sm border border-[rgba(169,180,185,0.1)] bg-white shadow-sm">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-[rgba(169,180,185,0.1)] bg-slate-50 px-6 py-3">
+        <div className="flex items-center gap-2">
+          <span
+            className="material-symbols-outlined text-sm text-[#0053dc]"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            verified_user
+          </span>
+          <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-[#2a3439]">
+            Payer Verification
+          </h3>
+        </div>
+        <VerifBadge status={pricing.status} label={
+          pricing.status === "priced_in_line" ? "Priced in line" :
+          pricing.status === "adjusted" ? "Rate adjusted" : "Pricing review"
+        } />
+      </div>
+
+      {/* 4-cell status strip */}
+      <div className="grid grid-cols-4 divide-x divide-slate-50 border-b border-[rgba(169,180,185,0.1)]">
+        {/* Eligibility */}
+        <div className="px-5 py-4">
+          <p className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-[#566166]">Eligibility</p>
+          <VerifBadge status={eligibility.status} />
+          {eligibility.coverage_window && (
+            <p className="mt-2 text-[10px] font-medium text-[#2a3439]">{eligibility.coverage_window}</p>
+          )}
+          {eligibility.notes.slice(0, 1).map((n, i) => (
+            <p className="mt-1 text-[10px] leading-snug text-[#566166]" key={i}>{n}</p>
+          ))}
+        </div>
+
+        {/* Prior Auth */}
+        <div className="px-5 py-4">
+          <p className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-[#566166]">Prior Auth</p>
+          <VerifBadge status={prior_authorization.status} />
+          {prior_authorization.authorization_id && (
+            <p className="mt-2 font-mono text-[10px] text-[#0053dc]">{prior_authorization.authorization_id}</p>
+          )}
+          {prior_authorization.approved_units != null && (
+            <p className="mt-1 text-[10px] text-[#566166]">{prior_authorization.approved_units} approved units</p>
+          )}
+          {prior_authorization.notes.slice(0, 1).map((n, i) => (
+            <p className="mt-1 text-[10px] leading-snug text-[#566166]" key={i}>{n}</p>
+          ))}
+        </div>
+
+        {/* Referral */}
+        <div className="px-5 py-4">
+          <p className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-[#566166]">Referral</p>
+          <VerifBadge status={referral.status} />
+          {referral.referral_id && (
+            <p className="mt-2 font-mono text-[10px] text-[#0053dc]">{referral.referral_id}</p>
+          )}
+          {referral.notes.slice(0, 1).map((n, i) => (
+            <p className="mt-1 text-[10px] leading-snug text-[#566166]" key={i}>{n}</p>
+          ))}
+        </div>
+
+        {/* Pricing summary */}
+        <div className="px-5 py-4">
+          <p className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-[#566166]">Pricing</p>
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[9px] text-[#566166]">Billed</span>
+              <span className="text-[11px] font-semibold text-[#2a3439]">${pricing.billed_amount.toFixed(2)}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[9px] text-[#566166]">Allowed</span>
+              <span className="text-[11px] font-bold text-[#0053dc]">${pricing.allowed_amount.toFixed(2)}</span>
+            </div>
+            {pricing.adjustment_amount > 0 && (
+              <div className="flex items-baseline justify-between gap-2 border-t border-slate-50 pt-1.5">
+                <span className="text-[9px] text-[#566166]">Adjustment</span>
+                <span className="text-[11px] font-semibold text-[#9f403d]">-${pricing.adjustment_amount.toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Line-level pricing */}
+      {pricing.line_results.length > 0 && (
+        <div>
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr className="bg-slate-50/60">
+                <th className="px-6 py-2.5 text-[9px] font-extrabold uppercase tracking-widest text-[#566166]">Line</th>
+                <th className="px-6 py-2.5 text-[9px] font-extrabold uppercase tracking-widest text-[#566166]">CPT</th>
+                <th className="px-6 py-2.5 text-right text-[9px] font-extrabold uppercase tracking-widest text-[#566166]">Billed</th>
+                <th className="px-6 py-2.5 text-right text-[9px] font-extrabold uppercase tracking-widest text-[#566166]">Allowed</th>
+                <th className="px-6 py-2.5 text-right text-[9px] font-extrabold uppercase tracking-widest text-[#566166]">Δ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {pricing.line_results.map((lr) => {
+                const delta = lr.billed_amount - lr.allowed_amount;
+                return (
+                  <tr className="hover:bg-slate-50/40" key={lr.line_number}>
+                    <td className="px-6 py-3 text-[11px] font-semibold text-[#566166]">{lr.line_number}</td>
+                    <td className="px-6 py-3 text-xs font-bold text-[#2a3439]">{lr.procedure_code}</td>
+                    <td className="px-6 py-3 text-right text-xs text-[#2a3439]">${lr.billed_amount.toFixed(2)}</td>
+                    <td className="px-6 py-3 text-right text-xs font-bold text-[#0053dc]">${lr.allowed_amount.toFixed(2)}</td>
+                    <td className={`px-6 py-3 text-right text-xs font-semibold ${delta > 0 ? "text-[#9f403d]" : "text-emerald-600"}`}>
+                      {delta > 0 ? `-$${delta.toFixed(2)}` : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {pricing.notes.length > 0 && (
+            <div className="border-t border-slate-50 px-6 py-3">
+              {pricing.notes.map((n, i) => (
+                <p className="text-[10px] text-[#566166]" key={i}>{n}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// ClaimContextCard — surfaces new claim fields in adjudication detail
+// ─────────────────────────────────────────────────────────────
+function ClaimContextCard({ result }: { result: ClaimDetailResponse }) {
+  const claim = result.claim;
+  const validationIssueCodes = new Set(result.validation.issues.map((i) => i.code));
+
+  const hasBillingProvider = claim.billing_provider_name || claim.billing_provider_id;
+  const hasRenderingProvider = claim.rendering_provider_name || claim.rendering_provider_id;
+  const hasReferringProvider = claim.referring_provider_name || claim.referring_provider_id;
+  const hasFacility = claim.facility_name || claim.facility_npi;
+  const isCorrectedClaim = claim.claim_frequency_code === "7" || claim.claim_frequency_code === "8";
+
+  function Field({ label, value, highlight }: { label: string; value: string | null | undefined; highlight?: boolean }) {
+    if (!value) return null;
+    return (
+      <div>
+        <p className="mb-0.5 text-[9px] font-bold uppercase tracking-widest text-[#566166]">{label}</p>
+        <p className={`text-[11px] font-semibold ${highlight ? "text-amber-700" : "text-[#2a3439]"}`}>{value}</p>
+      </div>
+    );
+  }
+
+  function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+          ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+        }`}
+      >
+        <span
+          className="material-symbols-outlined text-[10px]"
+          style={{ fontVariationSettings: "'FILL' 1" }}
+        >
+          {ok ? "check_circle" : "warning"}
+        </span>
+        {label}
+      </span>
+    );
+  }
+
+  const priorAuthSatisfied =
+    !!claim.prior_authorization_id &&
+    result.utilization_context?.prior_auth_status === "satisfied";
+  const priorAuthMissing = validationIssueCodes.has("prior_auth_missing");
+  const referralMissing = validationIssueCodes.has("referral_missing");
+  const freqReferenceMissing = validationIssueCodes.has("claim_frequency_missing_reference");
+  const modifierMissingIssues = result.validation.issues.filter(
+    (i) => i.code === "required_modifier_missing",
+  );
+
+  return (
+    <div className="overflow-hidden rounded-sm border border-[rgba(169,180,185,0.1)] bg-white shadow-sm">
+      <div className="border-b border-[rgba(169,180,185,0.1)] bg-slate-50 px-6 py-3">
+        <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-[#2a3439]">
+          Claim Reference Context
+        </h3>
+      </div>
+
+      <div className="divide-y divide-slate-50">
+        {/* Validation warnings — only when issues exist */}
+        {(priorAuthMissing || referralMissing || freqReferenceMissing || modifierMissingIssues.length > 0) && (
+          <div className="space-y-2 px-6 py-4">
+            {priorAuthMissing && (
+              <div className="flex items-start gap-2 rounded-sm border-l-4 border-amber-400 bg-amber-50 px-3 py-2">
+                <span className="material-symbols-outlined mt-0.5 text-sm text-amber-600">gpp_maybe</span>
+                <p className="text-[11px] font-semibold text-amber-800">
+                  Prior authorization ID not supplied — procedures in this claim require one.
+                </p>
+              </div>
+            )}
+            {referralMissing && (
+              <div className="flex items-start gap-2 rounded-sm border-l-4 border-amber-400 bg-amber-50 px-3 py-2">
+                <span className="material-symbols-outlined mt-0.5 text-sm text-amber-600">person_search</span>
+                <p className="text-[11px] font-semibold text-amber-800">
+                  Referral ID not supplied — HMO specialist claim requires a referral identifier.
+                </p>
+              </div>
+            )}
+            {freqReferenceMissing && (
+              <div className="flex items-start gap-2 rounded-sm border-l-4 border-amber-400 bg-amber-50 px-3 py-2">
+                <span className="material-symbols-outlined mt-0.5 text-sm text-amber-600">swap_horiz</span>
+                <p className="text-[11px] font-semibold text-amber-800">
+                  Corrected/replacement claim (CFC {claim.claim_frequency_code}) should include the payer control number it supersedes.
+                </p>
+              </div>
+            )}
+            {modifierMissingIssues.map((issue) => (
+              <div
+                className="flex items-start gap-2 rounded-sm border-l-4 border-amber-400 bg-amber-50 px-3 py-2"
+                key={issue.code + issue.message}
+              >
+                <span className="material-symbols-outlined mt-0.5 text-sm text-amber-600">code_off</span>
+                <p className="text-[11px] font-semibold text-amber-800">{issue.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Member extras */}
+        {(claim.member_date_of_birth || claim.member_gender || claim.subscriber_relationship !== "self") && (
+          <div className="grid grid-cols-3 gap-4 px-6 py-4">
+            <Field label="Date of Birth" value={claim.member_date_of_birth ? String(claim.member_date_of_birth) : null} />
+            <Field label="Gender" value={claim.member_gender} />
+            <Field label="Subscriber Rel." value={claim.subscriber_relationship} />
+          </div>
+        )}
+
+        {/* Provider roles */}
+        {(hasBillingProvider || hasRenderingProvider || hasReferringProvider) && (
+          <div className="px-6 py-4">
+            <p className="mb-3 text-[9px] font-bold uppercase tracking-widest text-[#566166]">Provider Roles</p>
+            <div className="grid grid-cols-3 gap-4">
+              {hasBillingProvider && (
+                <div>
+                  <p className="mb-0.5 text-[9px] font-bold uppercase tracking-widest text-[#566166]">Billing</p>
+                  <p className="text-[11px] font-semibold text-[#2a3439]">
+                    {claim.billing_provider_name ?? claim.billing_provider_id}
+                  </p>
+                  {claim.billing_provider_name && claim.billing_provider_id && (
+                    <p className="font-mono text-[9px] text-slate-400">{claim.billing_provider_id}</p>
+                  )}
+                </div>
+              )}
+              {hasRenderingProvider && (
+                <div>
+                  <p className="mb-0.5 text-[9px] font-bold uppercase tracking-widest text-[#566166]">Rendering</p>
+                  <p className="text-[11px] font-semibold text-[#2a3439]">
+                    {claim.rendering_provider_name ?? claim.rendering_provider_id}
+                  </p>
+                  {claim.rendering_provider_name && claim.rendering_provider_id && (
+                    <p className="font-mono text-[9px] text-slate-400">{claim.rendering_provider_id}</p>
+                  )}
+                </div>
+              )}
+              {hasReferringProvider && (
+                <div>
+                  <p className="mb-0.5 text-[9px] font-bold uppercase tracking-widest text-[#566166]">Referring</p>
+                  <p className="text-[11px] font-semibold text-[#2a3439]">
+                    {claim.referring_provider_name ?? claim.referring_provider_id}
+                  </p>
+                  {claim.referring_provider_name && claim.referring_provider_id && (
+                    <p className="font-mono text-[9px] text-slate-400">{claim.referring_provider_id}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Facility */}
+        {hasFacility && (
+          <div className="grid grid-cols-2 gap-4 px-6 py-4">
+            <Field label="Facility" value={claim.facility_name} />
+            <Field label="Facility NPI" value={claim.facility_npi} />
+          </div>
+        )}
+
+        {/* Auth & referral status row — source of truth is payer_verification_context */}
+        <div className="flex flex-wrap items-center gap-3 px-6 py-4">
+          {/* Prior auth */}
+          {(() => {
+            const pvcAuth = result.payer_verification_context?.prior_authorization;
+            if (pvcAuth) {
+              if (pvcAuth.status === "not_required" && !claim.prior_authorization_id) return null;
+              const ok = pvcAuth.status === "verified";
+              const warn = pvcAuth.status === "manual_review";
+              const label = pvcAuth.status === "verified" ? "Verified"
+                : pvcAuth.status === "missing" ? "Missing"
+                : pvcAuth.status === "manual_review" ? "Manual Review"
+                : "Not Required";
+              return (
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-[#566166]">Prior Auth</span>
+                  <StatusBadge ok={ok && !warn} label={label} />
+                  {pvcAuth.authorization_id && (
+                    <span className="font-mono text-[10px] text-[#0053dc]">{pvcAuth.authorization_id}</span>
+                  )}
+                </div>
+              );
+            }
+            // Fallback when payer_verification_context is absent
+            if (!result.utilization_context?.prior_auth_required && !claim.prior_authorization_id) return null;
+            return (
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-[#566166]">Prior Auth</span>
+                <StatusBadge ok={priorAuthSatisfied} label={priorAuthSatisfied ? "Satisfied" : claim.prior_authorization_id ? "Pending verification" : "Missing"} />
+                {claim.prior_authorization_id && <span className="font-mono text-[10px] text-[#0053dc]">{claim.prior_authorization_id}</span>}
+              </div>
+            );
+          })()}
+
+          {/* Referral */}
+          {(() => {
+            const pvcRef = result.payer_verification_context?.referral;
+            if (pvcRef) {
+              if (pvcRef.status === "not_required" && !claim.referral_id) return null;
+              const ok = pvcRef.status === "verified";
+              const label = pvcRef.status === "verified" ? "Verified"
+                : pvcRef.status === "missing" ? "Missing"
+                : pvcRef.status === "manual_review" ? "Manual Review"
+                : "Not Required";
+              return (
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-[#566166]">Referral</span>
+                  <StatusBadge ok={ok} label={label} />
+                  {pvcRef.referral_id && (
+                    <span className="font-mono text-[10px] text-[#0053dc]">{pvcRef.referral_id}</span>
+                  )}
+                </div>
+              );
+            }
+            // Fallback
+            if (claim.referral_id) return (
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-[#566166]">Referral</span>
+                <StatusBadge ok={true} label="Present" />
+                <span className="font-mono text-[10px] text-[#0053dc]">{claim.referral_id}</span>
+              </div>
+            );
+            if (referralMissing) return (
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-[#566166]">Referral</span>
+                <StatusBadge ok={false} label="Missing" />
+              </div>
+            );
+            return null;
+          })()}
+
+          {/* Claim frequency */}
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-[#566166]">CFC</span>
+            <span
+              className={`rounded-sm px-2 py-0.5 text-[9px] font-bold uppercase ${
+                isCorrectedClaim ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {claim.claim_frequency_code}{" "}
+              {claim.claim_frequency_code === "1"
+                ? "— Original"
+                : claim.claim_frequency_code === "7"
+                ? "— Corrected"
+                : claim.claim_frequency_code === "8"
+                ? "— Replacement"
+                : ""}
+            </span>
+            {isCorrectedClaim && claim.payer_claim_control_number && (
+              <span className="font-mono text-[10px] text-[#566166]">
+                supersedes {claim.payer_claim_control_number}
+              </span>
+            )}
+          </div>
+
+          {/* Accident / employment flags */}
+          {claim.accident_indicator && (
+            <span className="rounded-sm bg-[#fdeceb] px-2 py-0.5 text-[9px] font-bold uppercase text-[#9f403d]">
+              Accident-Related
+            </span>
+          )}
+          {claim.employment_related_indicator && (
+            <span className="rounded-sm bg-[#fdeceb] px-2 py-0.5 text-[9px] font-bold uppercase text-[#9f403d]">
+              Employment-Related
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Main page
 // ─────────────────────────────────────────────────────────────
 export function AdjudicationPage({
@@ -573,12 +1065,20 @@ export function AdjudicationPage({
     (result?.requires_human_review === true && reviewState?.status !== "resolved");
   const isResolved = confirmed || reviewState?.status === "resolved";
 
-  // Service line helpers
+  // Service line helpers — prefer backend pricing when available
   const serviceLines = result?.claim.service_lines ?? [];
+  const pvcPricing = result?.payer_verification_context?.pricing;
   const grossBilled = serviceLines.reduce((s, l) => s + l.charge_amount, 0);
-  const lineAllowed = (charge: number) =>
-    outcome === "approve" ? charge : outcome === "deny" ? 0 : charge;
-  const payableTotal = serviceLines.reduce((s, l) => s + lineAllowed(l.charge_amount), 0);
+  const lineAllowed = (lineNumber: number, charge: number): number => {
+    if (pvcPricing) {
+      const lr = pvcPricing.line_results.find((r) => r.line_number === lineNumber);
+      return lr?.allowed_amount ?? charge;
+    }
+    return outcome === "approve" ? charge : outcome === "deny" ? 0 : charge;
+  };
+  const payableTotal = pvcPricing
+    ? pvcPricing.allowed_amount
+    : serviceLines.reduce((s, l) => s + lineAllowed(l.line_number, l.charge_amount), 0);
   const networkSavings = grossBilled - payableTotal;
 
   async function handleConfirmDecision() {
@@ -949,6 +1449,12 @@ export function AdjudicationPage({
             </div>
           </div>
 
+          {result && <ClaimContextCard result={result} />}
+
+          {result?.payer_verification_context && (
+            <PayerVerificationPanel pvc={result.payer_verification_context} />
+          )}
+
           {/* Line Item Adjudication */}
           <div className="overflow-hidden rounded-sm border border-[rgba(169,180,185,0.1)] bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-[rgba(169,180,185,0.1)] bg-slate-50 px-6 py-4">
@@ -987,8 +1493,8 @@ export function AdjudicationPage({
               <tbody className="divide-y divide-slate-100">
                 {serviceLines.length > 0 ? (
                   serviceLines.map((line) => {
-                    const allowed = lineAllowed(line.charge_amount);
-                    const isDenied = outcome === "deny";
+                    const allowed = lineAllowed(line.line_number, line.charge_amount);
+                    const isDenied = pvcPricing ? allowed < line.charge_amount : outcome === "deny";
                     return (
                       <tr
                         className={`transition-colors hover:bg-slate-50 ${isDenied ? "bg-red-50/20" : ""}`}
@@ -997,8 +1503,20 @@ export function AdjudicationPage({
                         <td className="px-6 py-5">
                           <p className="text-xs font-bold text-[#2a3439]">{line.procedure_code}</p>
                           {line.modifiers.length > 0 && (
-                            <p className="text-[10px] font-medium text-[#566166]">
-                              MOD: {line.modifiers.join(", ")}
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {line.modifiers.map((mod) => (
+                                <span
+                                  className="rounded-sm bg-[#eef4ff] px-1.5 py-0.5 text-[9px] font-bold text-[#0053dc]"
+                                  key={mod}
+                                >
+                                  {mod}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {line.diagnosis_pointers.length > 0 && (
+                            <p className="text-[9px] font-medium text-[#566166]">
+                              Dx: {line.diagnosis_pointers.join(", ")}
                             </p>
                           )}
                           {line.units > 1 && (
@@ -1161,6 +1679,8 @@ export function AdjudicationPage({
             const pc = result.provider_context!;
             const networkOk = pc.network_status === "in_network";
             const contractOk = pc.contract_status === "active";
+            const credOk = pc.credential_status === "credentialed";
+            const hasReferringProvider = !!result.claim.referring_provider_id;
 
             function statusChip(ok: boolean, label: string) {
               return (
@@ -1178,19 +1698,56 @@ export function AdjudicationPage({
               );
             }
 
+            function credChip(status: string) {
+              const colors: Record<string, string> = {
+                credentialed: "bg-emerald-50 text-emerald-700",
+                provisional: "bg-amber-50 text-amber-700",
+                sanctioned: "bg-[#fdeceb] text-[#c94b41]",
+                pending: "bg-slate-100 text-slate-600",
+              };
+              return (
+                <span className={`rounded-sm px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${colors[status] ?? "bg-slate-100 text-slate-600"}`}>
+                  {status}
+                </span>
+              );
+            }
+
+            function tagList(items: string[]) {
+              if (!items.length) return <span className="text-[11px] text-[#a0acb0]">None</span>;
+              return (
+                <div className="flex flex-wrap gap-1">
+                  {items.map((it) => (
+                    <span key={it} className="rounded-sm bg-[#f0f4ff] px-1.5 py-0.5 text-[10px] font-medium text-[#0048bf]">
+                      {it}
+                    </span>
+                  ))}
+                </div>
+              );
+            }
+
             return (
               <div className="rounded-sm border border-[rgba(169,180,185,0.1)] bg-white p-6 shadow-sm">
                 <h3 className="mb-5 font-display text-[10px] font-extrabold uppercase tracking-widest text-[#2a3439]">
                   Provider Contract
                 </h3>
 
+                {/* Identity */}
                 <div className="mb-4">
                   <p className="text-sm font-bold text-[#2a3439]">{pc.provider_name}</p>
                   {pc.specialty && (
-                    <p className="text-[11px] text-[#566166]">{pc.specialty}</p>
+                    <p className="text-[11px] text-[#566166]">
+                      {pc.specialty}
+                      {pc.subspecialty ? ` · ${pc.subspecialty}` : ""}
+                    </p>
+                  )}
+                  {pc.taxonomy_code && (
+                    <p className="mt-0.5 font-mono text-[10px] text-[#8a9ba8]">
+                      Taxonomy {pc.taxonomy_code}
+                    </p>
                   )}
                 </div>
 
+                {/* Status strip */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-[#566166]">Network Status</span>
@@ -1210,6 +1767,11 @@ export function AdjudicationPage({
                   )}
 
                   <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-[#566166]">Credential Status</span>
+                    {credChip(pc.credential_status)}
+                  </div>
+
+                  <div className="flex items-center justify-between">
                     <span className="text-[11px] text-[#566166]">Plan Participation</span>
                     {statusChip(pc.participates_in_plan, pc.participates_in_plan ? "Participates" : "Not Participating")}
                   </div>
@@ -1221,6 +1783,21 @@ export function AdjudicationPage({
                     </div>
                   )}
 
+                  {/* Surgical privileges */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-[#566166]">Surgical Privileges</span>
+                    {statusChip(pc.surgical_privileges, pc.surgical_privileges ? "Granted" : "Not Granted")}
+                  </div>
+
+                  {/* Referral acceptance — surface when a referring provider is on the claim */}
+                  {hasReferringProvider && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-[#566166]">Accepts Referrals</span>
+                      {statusChip(pc.accepting_referrals, pc.accepting_referrals ? "Accepting" : "Not Accepting")}
+                    </div>
+                  )}
+
+                  {/* Coverage window */}
                   {(pc.network_effective_date || pc.network_end_date) && (
                     <div className="border-t border-slate-50 pt-3">
                       <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-[#566166]">
@@ -1232,10 +1809,48 @@ export function AdjudicationPage({
                     </div>
                   )}
 
+                  {/* Plan participation list */}
+                  {pc.plan_participation.length > 0 && (
+                    <div className="border-t border-slate-50 pt-3">
+                      <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-[#566166]">
+                        Plans
+                      </p>
+                      {tagList(pc.plan_participation)}
+                    </div>
+                  )}
+
+                  {/* Facility affiliations */}
+                  {pc.facility_affiliations.length > 0 && (
+                    <div className="border-t border-slate-50 pt-3">
+                      <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-[#566166]">
+                        Facility Affiliations
+                      </p>
+                      {tagList(pc.facility_affiliations)}
+                    </div>
+                  )}
+
+                  {/* Service locations */}
+                  {pc.service_locations.length > 0 && (
+                    <div className="border-t border-slate-50 pt-3">
+                      <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-[#566166]">
+                        Service Locations
+                      </p>
+                      {tagList(pc.service_locations)}
+                    </div>
+                  )}
+
+                  {/* Specialty match rationale */}
                   {pc.specialty_match_reason && (
                     <p className="border-t border-slate-50 pt-3 text-[11px] italic text-[#566166]">
                       {pc.specialty_match_reason}
                     </p>
+                  )}
+
+                  {/* Credential warning */}
+                  {!credOk && (
+                    <div className="mt-1 rounded-sm bg-[#fdeceb] px-3 py-2 text-[11px] text-[#c94b41]">
+                      Credential status is <strong>{pc.credential_status}</strong> — adjudication checks may be affected.
+                    </div>
                   )}
                 </div>
               </div>

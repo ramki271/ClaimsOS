@@ -1,0 +1,38 @@
+{
+  "claim_id": "CLM-SCEN-REFERRAL-1002",
+  "claim_type": "professional_outpatient",
+  "form_type": "CMS-1500",
+  "payer_name": "Apex Health Plan",
+  "plan_name": "Commercial HMO Select",
+  "member_id": "M-7712044",
+  "member_name": "Jordan Lee",
+  "member_date_of_birth": "1974-08-19",
+  "member_gender": "male",
+  "subscriber_relationship": "self",
+  "patient_id": "PAT-2044",
+  "provider_id": "PRV-CARD-300",
+  "provider_name": "Aurora Cardiology Partners",
+  "billing_provider_id": "PRV-CARD-300",
+  "billing_provider_name": "Aurora Cardiology Partners",
+  "rendering_provider_id": "PRV-CARD-300",
+  "rendering_provider_name": "Aurora Cardiology Partners",
+  "referring_provider_id": "PCP-7712",
+  "referring_provider_name": "Dr. Aria Singh",
+  "facility_name": "Aurora Cardiac Center",
+  "claim_frequency_code": "1",
+  "place_of_service": "11",
+  "diagnosis_codes": ["I25.10"],
+  "procedure_codes": ["93000"],
+  "service_lines": [
+    {
+      "line_number": 1,
+      "procedure_code": "93000",
+      "modifiers": ["25"],
+      "diagnosis_pointers": [1],
+      "units": 1,
+      "charge_amount": 185.0
+    }
+  ],
+  "amount": 185.0,
+  "date_of_service": "2026-04-18"
+}

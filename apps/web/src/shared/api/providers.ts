@@ -7,13 +7,20 @@ export type Provider = {
   name: string;
   npi?: string | null;
   tin?: string | null;
+  taxonomy_code?: string | null;
   specialty?: string | null;
+  subspecialty?: string | null;
   network_status: "in_network" | "out_of_network" | "pending";
   contract_tier?: string | null;
   contract_status?: "active" | "inactive" | "pending";
+  credential_status?: "credentialed" | "provisional" | "sanctioned" | "pending";
   network_effective_date?: string | null;
   network_end_date?: string | null;
   plan_participation?: string[];
+  facility_affiliations?: string[];
+  service_locations?: string[];
+  accepting_referrals?: boolean;
+  surgical_privileges?: boolean;
 };
 
 export type ProviderCreateRequest = Omit<Provider, "id">;

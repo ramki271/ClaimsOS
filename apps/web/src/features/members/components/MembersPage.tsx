@@ -243,7 +243,11 @@ function BodySilhouette() {
     <img
       alt="3D anatomical human body silhouette"
       src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWoDgS9Ov5gic_YsX9I72-Lu1U96-M3usWCO7E5INeSirOBggd6CW03-Caqk7IV1yoy0M_J91sthjfjvuoBbIRKhTio4jCYomqzo4vCG1HoANtEZlCjciLTnFDk1ysXxUCMyJDCzWv9S525I2-0w9JK_Y02Rin4shnp9-cd_Cf55q-oN-TjusCR07V5ixTFRnagsa1-2PuGHzFUPhAgdbA2Z1veVQCo_F5l_NbO_Y_UeCXQKqn1QLIKcgkT8f7YIIb8zBfRvXIudUx"
-      className="h-full w-auto max-h-[420px] opacity-90"
+      className="h-full w-auto max-h-[420px]"
+      style={{
+        filter:
+          "sepia(1) saturate(3.5) hue-rotate(185deg) brightness(0.62) contrast(1.15) drop-shadow(0 0 28px rgba(59,130,246,0.65))",
+      }}
     />
   );
 }
@@ -347,117 +351,109 @@ function MemberDetailView({
           {/* Row 1: Member context (3 columns) */}
           <div className="grid grid-cols-12 gap-5">
             {/* Member profile + plan summary */}
-            <aside className="col-span-12 xl:col-span-5 space-y-4">
-              {/* Member profile + plan summary */}
-              <div className="bg-white rounded-sm border border-[rgba(169,180,185,0.1)] shadow-[0_2px_12px_rgba(15,23,42,0.06)] p-5">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="h-14 w-14 shrink-0 rounded-sm bg-[#e8eff3] flex items-center justify-center">
-                    <span className="material-symbols-outlined text-4xl text-[#a9b4b9]" style={{ fontVariationSettings: "'FILL' 1" }}>person</span>
+            <aside className="col-span-12 xl:col-span-5">
+              <div className="rounded-sm overflow-hidden shadow-[0_4px_24px_rgba(0,83,220,0.12)] border border-[rgba(0,83,220,0.08)]">
+                {/* Gradient header */}
+                <div className="relative bg-gradient-to-br from-[#0b1628] via-[#0c2a5e] to-[#0053dc] px-6 pt-6 pb-8 overflow-hidden">
+                  {/* Subtle radial glow top-right */}
+                  <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-[#0053dc] opacity-20 blur-2xl pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+                  <div className="flex items-center gap-4 relative">
+                    <div className="h-14 w-14 shrink-0 rounded-sm bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-sm">
+                      <span className="material-symbols-outlined text-4xl text-white/70" style={{ fontVariationSettings: "'FILL' 1" }}>person</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-lg font-extrabold text-white tracking-tight truncate">{member.member_name}</h3>
+                      <p className="text-[11px] text-white/60 mt-0.5">DOB: {member.date_of_birth} · Age {calculateAge(member.date_of_birth)}</p>
+                      <p className="text-[11px] text-white/60">{member.member_id}</p>
+                    </div>
+                    <span className={`shrink-0 self-start text-[9px] font-extrabold px-2.5 py-1 rounded-sm uppercase tracking-wider ${
+                      member.eligibility_status === "active" ? "bg-emerald-400/20 text-emerald-300 border border-emerald-400/30"
+                      : member.eligibility_status === "inactive" ? "bg-red-400/20 text-red-300 border border-red-400/30"
+                      : "bg-amber-400/20 text-amber-300 border border-amber-400/30"
+                    }`}>{eligLabel}</span>
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="text-base font-bold text-[#2a3439] truncate">{member.member_name}</h3>
-                    <p className="text-[11px] text-[#566166]">DOB: {member.date_of_birth} (Age {calculateAge(member.date_of_birth)})</p>
-                    {plan_tier && <p className="text-[11px] font-bold text-[#0053dc] mt-0.5">{plan_tier}</p>}
-                  </div>
+
+                  {plan_tier && (
+                    <div className="mt-4 relative">
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">Plan</span>
+                      <p className="text-xs font-bold text-white/80 mt-0.5">{plan_tier} · {member.plan_name}</p>
+                    </div>
+                  )}
                 </div>
 
-                {/* Eligibility + deductible */}
-                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-[#f0f4f7]">
-                  <div>
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Eligibility</p>
-                    <span className={`text-xs font-bold ${eligBg}`}>{eligLabel}</span>
-                  </div>
-                  {deductible_met && (
+                {/* White body */}
+                <div className="bg-white px-6 py-5 space-y-0">
+                  {/* Key stats row */}
+                  <div className="grid grid-cols-3 gap-4 pb-4 border-b border-[#f0f4f7]">
                     <div>
                       <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Deductible</p>
                       <span className="text-xs font-bold text-[#2a3439]">{deductible_met} / {deductible_max}</span>
                     </div>
-                  )}
-                </div>
+                    <div>
+                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Effective</p>
+                      <span className="text-xs font-bold text-[#2a3439]">{member.effective_date}</span>
+                    </div>
+                    <div>
+                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Terminates</p>
+                      <span className="text-xs font-bold text-[#2a3439]">{member.termination_date ?? "—"}</span>
+                    </div>
+                  </div>
 
-                {/* Coverage window */}
-                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-[#f0f4f7]">
-                  <div>
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Effective</p>
-                    <span className="text-xs font-bold text-[#2a3439]">{member.effective_date}</span>
-                  </div>
-                  <div>
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-0.5">Terminates</p>
-                    <span className="text-xs font-bold text-[#2a3439]">{member.termination_date ?? "—"}</span>
-                  </div>
-                </div>
-
-                {/* Plan + payer context */}
-                <div className="mt-3 pt-3 border-t border-[#f0f4f7] space-y-2">
-                  <div className="flex justify-between items-start">
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Payer</p>
-                    <p className="text-[10px] font-bold text-[#2a3439] text-right max-w-[60%] truncate">{member.payer_name}</p>
-                  </div>
-                  <div className="flex justify-between items-start">
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Plan</p>
-                    <p className="text-[10px] font-bold text-[#2a3439] text-right max-w-[60%] truncate">{member.plan_name}</p>
-                  </div>
-                  <div className="flex justify-between items-start">
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Coverage</p>
-                    <p className="text-[10px] font-bold text-[#2a3439] text-right">{coverageTypeLabel(member.coverage_type)}</p>
-                  </div>
-                  <div className="flex justify-between items-start">
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Subscriber Role</p>
-                    <p className="text-[10px] font-bold text-[#2a3439] text-right capitalize">{member.relationship_to_subscriber}</p>
-                  </div>
-                </div>
-
-                {/* Auth requirements */}
-                <div className="mt-3 pt-3 border-t border-[#f0f4f7] space-y-2">
-                  {member.pcp_name && (
+                  {/* Plan + payer context */}
+                  <div className="pt-4 space-y-2.5">
                     <div className="flex justify-between items-start">
-                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">PCP</p>
-                      <p className="text-[10px] font-bold text-[#2a3439] text-right max-w-[60%] truncate">{member.pcp_name}</p>
+                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Payer</p>
+                      <p className="text-[10px] font-bold text-[#2a3439] text-right max-w-[60%] truncate">{member.payer_name}</p>
+                    </div>
+                    <div className="flex justify-between items-start">
+                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Coverage</p>
+                      <p className="text-[10px] font-bold text-[#2a3439] text-right">{coverageTypeLabel(member.coverage_type)}</p>
+                    </div>
+                    <div className="flex justify-between items-start">
+                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Subscriber Role</p>
+                      <p className="text-[10px] font-bold text-[#2a3439] text-right capitalize">{member.relationship_to_subscriber}</p>
+                    </div>
+                    {member.pcp_name && (
+                      <div className="flex justify-between items-start">
+                        <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">PCP</p>
+                        <p className="text-[10px] font-bold text-[#2a3439] text-right max-w-[60%] truncate">{member.pcp_name}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Auth flags */}
+                  <div className="mt-4 pt-4 border-t border-[#f0f4f7] space-y-2.5">
+                    <div className="flex justify-between items-center">
+                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Referral Required</p>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-sm ${member.referral_required ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
+                        {member.referral_required ? "Yes" : "No"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Prior Auth — Specialty</p>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-sm ${member.prior_auth_required_for_specialty ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
+                        {member.prior_auth_required_for_specialty ? "Required" : "Not Required"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Risk flags */}
+                  {member.risk_flags.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-[#f0f4f7]">
+                      <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-2">Risk Flags</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {member.risk_flags.map((flag) => (
+                          <span key={flag} className="text-[9px] font-bold px-2 py-0.5 bg-[#fdeceb] text-[#c94b41] border border-red-200 rounded-sm uppercase tracking-wider">
+                            {flag.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
-                  <div className="flex justify-between items-center">
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Referral Required</p>
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-sm ${member.referral_required ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
-                      {member.referral_required ? "Yes" : "No"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold">Prior Auth — Specialty</p>
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-sm ${member.prior_auth_required_for_specialty ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
-                      {member.prior_auth_required_for_specialty ? "Required" : "Not Required"}
-                    </span>
-                  </div>
                 </div>
-
-                {/* Risk flags */}
-                {member.risk_flags.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-[#f0f4f7]">
-                    <p className="text-[9px] uppercase tracking-wider text-[#566166] font-bold mb-2">Risk Flags</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {member.risk_flags.map((flag) => (
-                        <span key={flag} className="text-[9px] font-bold px-2 py-0.5 bg-[#fdeceb] text-[#c94b41] border border-red-200 rounded-sm uppercase tracking-wider">
-                          {flag.replace(/_/g, " ")}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
-
-              {/* Coverage notes */}
-              {data.coverage_notes.length > 0 && (
-                <div className="bg-white rounded-sm border border-[rgba(169,180,185,0.1)] shadow-[0_2px_12px_rgba(15,23,42,0.06)] p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="material-symbols-outlined text-[#566166] text-base leading-none">info</span>
-                    <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-[#2a3439]">Coverage Notes</h3>
-                  </div>
-                  <ul className="space-y-2">
-                    {data.coverage_notes.map((note, i) => (
-                      <li key={i} className="text-[11px] text-[#566166] leading-snug pl-3 border-l-2 border-[#e8eff3]">{note}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
 
             </aside>
 

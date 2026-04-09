@@ -14,24 +14,6 @@
       "filename": "APX-COM-500-EM-99213.md"
     },
     {
-      "policy_id": "APX-POS-11-PROF-2026",
-      "title": "Professional Office Visit Place-of-Service Rule",
-      "medical_logic_branch": ["Prof-Out", "Site-Care"],
-      "adjudication_weight": 79.4,
-      "ingestion_status": "Ready for Upload",
-      "classification": "POLICY_CORE",
-      "filename": "APX-POS-11-PROF-2026.md"
-    },
-    {
-      "policy_id": "APX-NET-TIER1-PROF-2026",
-      "title": "Provider Network and Contract Tier Logic",
-      "medical_logic_branch": ["Network-Par", "Contract-Tier"],
-      "adjudication_weight": 73.2,
-      "ingestion_status": "Ready for Upload",
-      "classification": "PROVIDER_POLICY",
-      "filename": "APX-NET-TIER1-PROF-2026.md"
-    },
-    {
       "policy_id": "APX-PRIORAUTH-ORTHO-2026",
       "title": "Prior Authorization Rule for Orthopedic Surgical Services",
       "medical_logic_branch": ["Prior-Auth", "Ortho-Surg"],
@@ -48,6 +30,51 @@
       "ingestion_status": "Ready for Upload",
       "classification": "INTEGRITY_RULE",
       "filename": "APX-DUP-FREQ-2026.md"
+    },
+    {
+      "policy_id": "APX-REFERRAL-HMO-SPECIALIST-2026",
+      "title": "Specialist Referral Management Policy",
+      "medical_logic_branch": ["Referral", "Specialist-Access"],
+      "adjudication_weight": 84.6,
+      "ingestion_status": "Ready for Upload",
+      "classification": "UTILIZATION_RULE",
+      "filename": "APX-REFERRAL-HMO-SPECIALIST-2026.md"
+    },
+    {
+      "policy_id": "APX-PROVIDER-CREDENTIALING-2026",
+      "title": "Provider Credentialing Policy",
+      "medical_logic_branch": ["Provider", "Credentialing"],
+      "adjudication_weight": 82.1,
+      "ingestion_status": "Ready for Upload",
+      "classification": "PROVIDER_POLICY",
+      "filename": "APX-PROVIDER-CREDENTIALING-2026.md"
+    },
+    {
+      "policy_id": "APX-SPECIALTY-TAXONOMY-2026",
+      "title": "Specialty and Taxonomy Alignment Policy",
+      "medical_logic_branch": ["Provider", "Specialty-Taxonomy"],
+      "adjudication_weight": 80.4,
+      "ingestion_status": "Ready for Upload",
+      "classification": "PROVIDER_POLICY",
+      "filename": "APX-SPECIALTY-TAXONOMY-2026.md"
+    },
+    {
+      "policy_id": "APX-FACILITY-SITE-OF-CARE-2026",
+      "title": "Facility Affiliation and Site-of-Care Policy",
+      "medical_logic_branch": ["Facility", "Site-Care"],
+      "adjudication_weight": 78.9,
+      "ingestion_status": "Ready for Upload",
+      "classification": "PROVIDER_POLICY",
+      "filename": "APX-FACILITY-SITE-OF-CARE-2026.md"
+    },
+    {
+      "policy_id": "APX-PROF-ALLOWABLES-2026",
+      "title": "Professional Allowables and Pricing Policy",
+      "medical_logic_branch": ["Pricing", "Allowables"],
+      "adjudication_weight": 76.2,
+      "ingestion_status": "Ready for Upload",
+      "classification": "REIMBURSEMENT_RULE",
+      "filename": "APX-PROF-ALLOWABLES-2026.md"
     }
   ]
 }

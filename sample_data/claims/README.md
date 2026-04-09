@@ -1,96 +1,80 @@
-# Sample Claim Test Pack
+# Sample Claim Pack
 
-This folder contains ready-to-upload professional `837P` test claims aligned to the current ClaimsOS MVP backend behavior.
+This folder is now organized around one current demo/testing entrypoint:
 
-These claims are designed to work with:
-- the current X12 parser
-- the current validation rules
-- the current adjudication rules
-- the Apex Health Plan sample policy pack
+- [apex_bulk_realistic_5_claims.x12](/Users/ramakrishnan.sridar/ClaimsOS1/ClaimsOS/sample_data/claims/apex_bulk_realistic_5_claims.x12)
 
-Recommended setup:
-1. Upload the Apex policy documents from [sample_data/policies](/Users/ramakrishnan.sridar/ClaimsOS1/ClaimsOS/sample_data/policies)
-2. Then upload one of these claim files through the claim upload flow
+That file is the main claim-ingest artifact to use for realistic demo flows because `837P / X12` is the primary external claim format we want to mimic.
 
-## Files
+## Current File
 
-- `apex_bulk_mixed_6_claims.x12`
+- `apex_bulk_realistic_5_claims.x12`
   - Use with: `POST /api/claims/upload-x12-batch`
-  - Contains 6 claims with mixed outcomes:
-    - `CLM-BULK-APPROVE-0001`
-      - Expected path: `approve`
-      - Why:
-        - `99213`
-        - supported diagnoses `E11.9` / `I10`
-        - `POS 11`
-        - simple office visit amount `150`
-    - `CLM-BULK-REVIEW-0002`
-      - Expected path: `review`
-      - Why:
-        - valid `99213`
-        - amount `425` exceeds straight-through threshold but not hard deny threshold
-    - `CLM-BULK-DENY-0003`
-      - Expected path: `deny`
-      - Why:
-        - amount `1250` exceeds the current MVP hard guardrail
-    - `CLM-BULK-THERAPY-0004`
-      - Expected path: `review`
-      - Why:
-        - valid `M54.5` + `97110`
-        - `POS 22` pushes it outside the narrow office-visit fast lane
-    - `CLM-BULK-PRIORAUTH-0005`
-      - Expected path: `review`
-      - Why:
-        - valid `M17.11` + `27447`
-        - procedure triggers prior authorization / utilization review
-    - `CLM-BULK-MISMATCH-0006`
-      - Expected path: `deny`
-      - Why:
-        - `I10` does not support `99214` in current validation rules
+  - Contains 5 scenarios aligned to the current Apex policy set and seeded provider/member data:
+    - `CLM-X12-APPROVE-2001`
+      - expected outcome: `approve`
+      - clean in-network office visit for Elena Martinez / Front Range Family Medicine
+    - `CLM-X12-REFERRAL-2002`
+      - expected outcome: `review`
+      - Jordan Lee / Commercial HMO Select / cardiology service missing referral
+    - `CLM-X12-PRIORAUTH-2003`
+      - expected outcome: `review`
+      - Harold Bennett / orthopedic procedure missing prior auth
+    - `CLM-X12-SANCTION-2004`
+      - expected outcome: `deny`
+      - sanctioned orthopedic provider
+    - `CLM-X12-CORRECTED-2005`
+      - expected outcome: `review`
+      - corrected claim frequency code `7` without payer control reference
 
-- `apex_approve_99213.x12`
-  - Expected path: `approve`
-  - Why:
-    - payer is `Apex Health Plan`
-    - plan is `Commercial PPO 500`
-    - CPT `99213`
-    - diagnosis `E11.9` and `I10`
-    - place of service `11`
-    - amount `150`
-    - one service line
+## Recommended Setup
 
-- `apex_review_99213_high_amount.x12`
-  - Expected path: `deny`
-  - Why:
-    - amount is above the current MVP validation guardrail of `1000`
-    - deterministic validation should fail
+1. Upload the current markdown policy set from [sample_data/policies](/Users/ramakrishnan.sridar/ClaimsOS1/ClaimsOS/sample_data/policies)
+2. Seed providers from [sample_data/providers/apex_provider_seed_pack.json](/Users/ramakrishnan.sridar/ClaimsOS1/ClaimsOS/sample_data/providers/apex_provider_seed_pack.json)
+3. Upload [apex_bulk_realistic_5_claims.x12](/Users/ramakrishnan.sridar/ClaimsOS1/ClaimsOS/sample_data/claims/apex_bulk_realistic_5_claims.x12)
 
-- `apex_review_97110_weak_match.x12`
-  - Expected path: `review`
-  - Why:
-    - validation passes because `M54.5` + `97110` is an allowed pair
-    - but the claim falls outside the narrow straight-through profile because:
-      - CPT is not the office-visit path
-      - amount / service shape do not match the simple office-visit auto-approval profile
-    - it should also have weaker overlap with the uploaded Apex office-visit policy
+## Internal Fixtures
+
+These files are still useful, but they are no longer the primary demo-facing claim assets:
+
+- [internal_json/apex_scenario_manifest.json](/Users/ramakrishnan.sridar/ClaimsOS1/ClaimsOS/sample_data/claims/internal_json/apex_scenario_manifest.json)
+- [internal_json/advanced](/Users/ramakrishnan.sridar/ClaimsOS1/ClaimsOS/sample_data/claims/internal_json/advanced)
+
+Use those when you want:
+- backend fixture coverage
+- canonical JSON payload testing
+- scenario-by-scenario debugging outside X12 upload
+
+## Archive
+
+Older MVP X12 files were moved to:
+
+- [archive](/Users/ramakrishnan.sridar/ClaimsOS1/ClaimsOS/sample_data/claims/archive)
+
+They are kept for reference, but the current recommendation is to use the single bulk realistic X12 file above.
 
 ## Upload Example
 
 ```bash
-curl -X POST http://localhost:8000/api/claims/upload-x12 \
-  -F "file=@sample_data/claims/apex_approve_99213.x12"
+curl -X POST http://localhost:8000/api/claims/upload-x12-batch \
+  -F "file=@sample_data/claims/apex_bulk_realistic_5_claims.x12"
 ```
 
-## Batch Upload Example
+## Internal JSON Example
 
 ```bash
-curl -X POST http://localhost:8000/api/claims/upload-x12-batch \
-  -F "file=@sample_data/claims/apex_bulk_mixed_6_claims.x12"
+curl -X POST http://localhost:8000/api/claims/process \
+  -H "Content-Type: application/json" \
+  -d @sample_data/claims/internal_json/advanced/CLM-SCEN-APPROVE-1001.json
 ```
 
-## Important
+## Notes
 
-These files are aligned to the backend as of the current MVP:
-- `approve` is driven by a narrow deterministic rule
-- `deny` happens when validation fails
-- `review` happens when the claim is valid but outside the strict first-pass straight-through profile
+- The current X12 parser now supports:
+  - prior auth via `REF*G1`
+  - referral via `REF*9F`
+  - corrected claim references via `REF*F8`
+  - claim frequency via `CLM05-3`
+  - facility name via `NM1*77`
+- The internal JSON fixtures remain useful because they can still express some richer canonical detail more directly than X12.
+- The current bulk X12 pack uses unique claim IDs and April 2026 service dates to reduce duplicate-noise during demos.

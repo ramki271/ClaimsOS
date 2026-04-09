@@ -1,9 +1,8 @@
-import { useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import type {
   ClaimDocumentDraft,
   ClaimDocumentIntakeResponse,
   ClaimSubmission,
-  DraftServiceLine,
   X12BatchUploadResponse,
 } from "../../../shared/api/claims";
 
@@ -11,22 +10,47 @@ import type {
 // EditableDraft — flat string-keyed form state for the AI review step.
 // All values are strings so inputs bind cleanly; converted to ClaimSubmission at submit.
 // ─────────────────────────────────────────────────────────────
+type EditableServiceLine = {
+  procedure_code: string;
+  modifiers_raw: string;
+  diagnosis_pointers_raw: string;
+  units: string;
+  charge_amount: string;
+};
+
 type EditableDraft = {
   claim_id: string;
   payer_name: string;
   plan_name: string;
   member_id: string;
   member_name: string;
+  member_dob: string;
+  member_gender: "female" | "male" | "other" | "unknown" | "";
+  subscriber_relationship: "self" | "spouse" | "child" | "other";
   patient_id: string;
   provider_id: string;
   provider_name: string;
+  billing_provider_id: string;
+  billing_provider_name: string;
+  rendering_provider_id: string;
+  rendering_provider_name: string;
+  referring_provider_id: string;
+  referring_provider_name: string;
+  facility_name: string;
+  facility_npi: string;
+  prior_auth_id: string;
+  referral_id: string;
+  claim_frequency_code: string;
+  payer_claim_control_number: string;
+  accident_indicator: boolean;
+  employment_related_indicator: boolean;
+  supporting_doc_ids_raw: string;
   place_of_service: string;
-  diagnosis_codes_raw: string; // comma-separated
-  procedure_codes_raw: string; // comma-separated
+  diagnosis_codes_raw: string;
+  procedure_codes_raw: string;
   amount_raw: string;
   date_of_service: string;
-  // Preserved extracted service lines — used verbatim at submit when present
-  _extractedServiceLines: import("../../../shared/api/claims").DraftServiceLine[];
+  _serviceLines: EditableServiceLine[];
 };
 
 function draftToEditable(draft: ClaimDocumentDraft): EditableDraft {
@@ -36,56 +60,74 @@ function draftToEditable(draft: ClaimDocumentDraft): EditableDraft {
     plan_name: draft.plan_name ?? "",
     member_id: draft.member_id ?? "",
     member_name: draft.member_name ?? "",
+    member_dob: draft.member_date_of_birth ? String(draft.member_date_of_birth) : "",
+    member_gender: (draft.member_gender as EditableDraft["member_gender"]) ?? "",
+    subscriber_relationship: (draft.subscriber_relationship as EditableDraft["subscriber_relationship"]) ?? "self",
     patient_id: draft.patient_id ?? "",
     provider_id: draft.provider_id ?? "",
     provider_name: draft.provider_name ?? "",
-    place_of_service: draft.place_of_service ?? "",
+    billing_provider_id: draft.billing_provider_id ?? "",
+    billing_provider_name: draft.billing_provider_name ?? "",
+    rendering_provider_id: draft.rendering_provider_id ?? "",
+    rendering_provider_name: draft.rendering_provider_name ?? "",
+    referring_provider_id: draft.referring_provider_id ?? "",
+    referring_provider_name: draft.referring_provider_name ?? "",
+    facility_name: draft.facility_name ?? "",
+    facility_npi: draft.facility_npi ?? "",
+    prior_auth_id: draft.prior_authorization_id ?? "",
+    referral_id: draft.referral_id ?? "",
+    claim_frequency_code: draft.claim_frequency_code ?? "1",
+    payer_claim_control_number: draft.payer_claim_control_number ?? "",
+    accident_indicator: draft.accident_indicator ?? false,
+    employment_related_indicator: draft.employment_related_indicator ?? false,
+    supporting_doc_ids_raw: (draft.supporting_document_ids ?? []).join(", "),
+    place_of_service: draft.place_of_service ?? "11",
     diagnosis_codes_raw: draft.diagnosis_codes.join(", "),
     procedure_codes_raw: draft.procedure_codes.join(", "),
     amount_raw: draft.amount != null ? String(draft.amount) : "",
-    date_of_service: draft.date_of_service ?? "",
-    _extractedServiceLines: draft.service_lines,
+    date_of_service: draft.date_of_service ? String(draft.date_of_service) : "",
+    _serviceLines:
+      draft.service_lines.length > 0
+        ? draft.service_lines.map((l) => ({
+            procedure_code: l.procedure_code ?? "",
+            modifiers_raw: l.modifiers.join(", "),
+            diagnosis_pointers_raw: l.diagnosis_pointers.join(", "),
+            units: l.units != null ? String(l.units) : "1",
+            charge_amount: l.charge_amount != null ? String(l.charge_amount) : "",
+          }))
+        : [{ procedure_code: "", modifiers_raw: "", diagnosis_pointers_raw: "", units: "1", charge_amount: "" }],
   };
 }
 
 function editableToSubmission(e: EditableDraft): ClaimSubmission {
   const diagCodes = e.diagnosis_codes_raw.split(",").map((s) => s.trim()).filter(Boolean);
   const procCodes = e.procedure_codes_raw.split(",").map((s) => s.trim()).filter(Boolean);
-  const amount = parseFloat(e.amount_raw) || 0;
 
-  // Prefer extracted service lines when they're complete AND still consistent with
-  // the user's reviewed proc codes and amount. If either drifted (user edited them),
-  // rebuild from the edited top-level values so line data stays in sync.
-  const extractedComplete = e._extractedServiceLines.filter(
-    (l): l is DraftServiceLine & { procedure_code: string; charge_amount: number; units: number } =>
-      l.procedure_code != null && l.charge_amount != null && l.units != null,
+  const editedLines = e._serviceLines.filter(
+    (l) => l.procedure_code.trim() && parseFloat(l.charge_amount) > 0,
   );
-
-  const extractedProcCodes = extractedComplete.map((l) => l.procedure_code);
-  const extractedTotal = extractedComplete.reduce((sum, l) => sum + l.charge_amount, 0);
-  const codesMatch =
-    procCodes.length === extractedProcCodes.length &&
-    procCodes.every((c, i) => c === extractedProcCodes[i]);
-  const amountMatches = Math.abs(extractedTotal - amount) < 0.01;
-
+  // Derive the canonical amount from line items when they are present, so
+  // it always matches what the backend will compute from the service lines.
+  const lineTotal = editedLines.reduce((s, l) => s + (parseFloat(l.charge_amount) || 0), 0);
+  const amount = lineTotal > 0 ? lineTotal : parseFloat(e.amount_raw) || 0;
   const serviceLines =
-    extractedComplete.length > 0 && codesMatch && amountMatches
-      ? extractedComplete.map((l, i) => ({
-          line_number: l.line_number ?? i + 1,
-          procedure_code: l.procedure_code,
-          modifiers: l.modifiers,
-          units: l.units,
-          charge_amount: l.charge_amount,
+    editedLines.length > 0
+      ? editedLines.map((l, i) => ({
+          line_number: i + 1,
+          procedure_code: l.procedure_code.trim(),
+          modifiers: l.modifiers_raw.split(",").map((s) => s.trim()).filter(Boolean),
+          diagnosis_pointers: l.diagnosis_pointers_raw
+            .split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n)),
+          units: parseInt(l.units, 10) || 1,
+          charge_amount: parseFloat(l.charge_amount) || 0,
         }))
       : procCodes.map((code, i) => ({
           line_number: i + 1,
           procedure_code: code,
           modifiers: [],
+          diagnosis_pointers: [],
           units: 1,
-          charge_amount:
-            procCodes.length > 0
-              ? Math.round((amount / procCodes.length) * 100) / 100
-              : 0,
+          charge_amount: procCodes.length > 0 ? Math.round((amount / procCodes.length) * 100) / 100 : 0,
         }));
 
   return {
@@ -96,16 +138,152 @@ function editableToSubmission(e: EditableDraft): ClaimSubmission {
     plan_name: e.plan_name,
     member_id: e.member_id,
     member_name: e.member_name,
+    member_date_of_birth: e.member_dob || null,
+    member_gender: (e.member_gender as ClaimSubmission["member_gender"]) || null,
+    subscriber_relationship: e.subscriber_relationship as ClaimSubmission["subscriber_relationship"],
     patient_id: e.patient_id || e.member_id,
     provider_id: e.provider_id || "PRV-AI",
     provider_name: e.provider_name,
+    billing_provider_id: e.billing_provider_id || null,
+    billing_provider_name: e.billing_provider_name || null,
+    rendering_provider_id: e.rendering_provider_id || null,
+    rendering_provider_name: e.rendering_provider_name || null,
+    referring_provider_id: e.referring_provider_id || null,
+    referring_provider_name: e.referring_provider_name || null,
+    facility_name: e.facility_name || null,
+    facility_npi: e.facility_npi || null,
+    prior_authorization_id: e.prior_auth_id || null,
+    referral_id: e.referral_id || null,
+    claim_frequency_code: e.claim_frequency_code || "1",
+    payer_claim_control_number: e.payer_claim_control_number || null,
+    accident_indicator: e.accident_indicator,
+    employment_related_indicator: e.employment_related_indicator,
+    supporting_document_ids: e.supporting_doc_ids_raw.split(",").map((s) => s.trim()).filter(Boolean),
     place_of_service: e.place_of_service || "11",
     diagnosis_codes: diagCodes,
-    procedure_codes: procCodes,
+    procedure_codes: editedLines.length > 0 ? editedLines.map((l) => l.procedure_code.trim()) : procCodes,
     service_lines: serviceLines,
     amount,
     date_of_service: e.date_of_service,
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// FormSection — lightweight labeled section divider
+// ─────────────────────────────────────────────────────────────
+function FormSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-3 text-[9px] font-extrabold uppercase tracking-[0.18em] text-[#0053dc]">
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// ServiceLineEditor — compact repeatable line-item editor
+// ─────────────────────────────────────────────────────────────
+function ServiceLineEditor({
+  lines,
+  onUpdate,
+  onAdd,
+  onRemove,
+}: {
+  lines: EditableServiceLine[];
+  onUpdate: (index: number, key: keyof EditableServiceLine, value: string) => void;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <FormSection label="Service Lines">
+      <div className="overflow-hidden rounded-sm border border-[rgba(169,180,185,0.2)]">
+        <table className="w-full border-collapse text-left">
+          <thead>
+            <tr className="bg-slate-50">
+              {["#", "CPT / HCPCS", "Modifiers", "Dx Ptrs", "Units", "Amount ($)", ""].map((h) => (
+                <th
+                  className="px-3 py-2 text-[8px] font-bold uppercase tracking-wider text-[#566166]"
+                  key={h}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50 bg-white">
+            {lines.map((line, i) => (
+              <tr key={i}>
+                <td className="w-6 px-3 py-2 text-[10px] text-slate-400">{i + 1}</td>
+                <td className="px-2 py-1.5">
+                  <input
+                    className="w-24 rounded-sm border border-[rgba(169,180,185,0.3)] px-2 py-1.5 text-xs text-[#2a3439] outline-none focus:border-[#0053dc] focus:ring-1 focus:ring-[#0053dc]"
+                    onChange={(e) => onUpdate(i, "procedure_code", e.target.value)}
+                    placeholder="99213"
+                    value={line.procedure_code}
+                  />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input
+                    className="w-20 rounded-sm border border-[rgba(169,180,185,0.3)] px-2 py-1.5 text-xs text-[#2a3439] outline-none focus:border-[#0053dc] focus:ring-1 focus:ring-[#0053dc]"
+                    onChange={(e) => onUpdate(i, "modifiers_raw", e.target.value)}
+                    placeholder="25, 59"
+                    value={line.modifiers_raw}
+                  />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input
+                    className="w-16 rounded-sm border border-[rgba(169,180,185,0.3)] px-2 py-1.5 text-xs text-[#2a3439] outline-none focus:border-[#0053dc] focus:ring-1 focus:ring-[#0053dc]"
+                    onChange={(e) => onUpdate(i, "diagnosis_pointers_raw", e.target.value)}
+                    placeholder="1, 2"
+                    value={line.diagnosis_pointers_raw}
+                  />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input
+                    className="w-12 rounded-sm border border-[rgba(169,180,185,0.3)] px-2 py-1.5 text-xs text-[#2a3439] outline-none focus:border-[#0053dc] focus:ring-1 focus:ring-[#0053dc]"
+                    onChange={(e) => onUpdate(i, "units", e.target.value)}
+                    placeholder="1"
+                    value={line.units}
+                  />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input
+                    className="w-24 rounded-sm border border-[rgba(169,180,185,0.3)] px-2 py-1.5 text-xs text-[#2a3439] outline-none focus:border-[#0053dc] focus:ring-1 focus:ring-[#0053dc]"
+                    onChange={(e) => onUpdate(i, "charge_amount", e.target.value)}
+                    placeholder="150.00"
+                    value={line.charge_amount}
+                  />
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  {lines.length > 1 && (
+                    <button
+                      className="p-0.5 text-slate-300 hover:text-[#c94b41]"
+                      onClick={() => onRemove(i)}
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="border-t border-slate-50 bg-slate-50 px-3 py-2">
+          <button
+            className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-[#0053dc] hover:opacity-70"
+            onClick={onAdd}
+            type="button"
+          >
+            <span className="material-symbols-outlined text-xs">add</span>
+            Add Line
+          </button>
+        </div>
+      </div>
+    </FormSection>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -174,6 +352,12 @@ export function IntakePolicyPage({
   const lowConfMap = new Map((aiDraft?.low_confidence_fields ?? []).map((f) => [f.field, f]));
 
   // A draft is processable only when all fields required by ClaimSubmission are filled.
+  const hasValidServiceLines =
+    editableDraft != null &&
+    editableDraft._serviceLines.some(
+      (l) => l.procedure_code.trim() !== "" && parseFloat(l.charge_amount) > 0,
+    );
+
   const isReadyToProcess =
     editableDraft != null &&
     editableDraft.member_name.trim() !== "" &&
@@ -183,7 +367,7 @@ export function IntakePolicyPage({
     editableDraft.provider_name.trim() !== "" &&
     editableDraft.date_of_service.trim() !== "" &&
     editableDraft.diagnosis_codes_raw.trim() !== "" &&
-    editableDraft.procedure_codes_raw.trim() !== "" &&
+    (editableDraft.procedure_codes_raw.trim() !== "" || hasValidServiceLines) &&
     parseFloat(editableDraft.amount_raw) > 0;
 
   // Count still-empty originally-missing fields for the callout
@@ -203,6 +387,120 @@ export function IntakePolicyPage({
     setEditableDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
 
+  function renderSelectField(
+    key: keyof EditableDraft,
+    backendKey: string,
+    label: string,
+    options: { value: string; label: string }[],
+  ) {
+    if (!editableDraft) return null;
+    const val = String(editableDraft[key] ?? "");
+    const lowConf = lowConfMap.get(backendKey);
+    const wasOriginallyMissing = missingSet.has(backendKey);
+    const stillMissing = wasOriginallyMissing && val.trim() === "";
+    return (
+      <div key={key}>
+        <div className="mb-1.5 flex items-center gap-2">
+          <label className="block text-[9px] font-bold uppercase tracking-widest text-[#566166]">
+            {label}
+          </label>
+          {stillMissing && (
+            <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[8px] font-bold uppercase text-amber-700">
+              Required
+            </span>
+          )}
+          {!stillMissing && lowConf && (
+            <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-600">
+              <span className="material-symbols-outlined text-[11px]">warning</span>
+              {lowConf.confidence} confidence
+            </span>
+          )}
+        </div>
+        <select
+          className={[
+            "w-full rounded-sm border px-3 py-2 text-sm text-[#2a3439] outline-none focus:ring-1",
+            stillMissing
+              ? "border-amber-400 bg-amber-50 focus:ring-amber-400"
+              : lowConf
+              ? "border-yellow-300 bg-yellow-50/40 focus:ring-yellow-300"
+              : "border-[rgba(169,180,185,0.3)] bg-white focus:ring-[#0053dc]",
+          ].join(" ")}
+          onChange={(e) => setEditableField(key, e.target.value)}
+          value={val}
+        >
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  function renderToggle(
+    key: "accident_indicator" | "employment_related_indicator",
+    label: string,
+  ) {
+    if (!editableDraft) return null;
+    const val = editableDraft[key] as boolean;
+    return (
+      <button
+        className={`flex items-center gap-2 rounded-sm border px-3 py-2 text-[11px] font-bold transition-colors ${
+          val
+            ? "border-[#0053dc] bg-[#eef4ff] text-[#0053dc]"
+            : "border-[rgba(169,180,185,0.3)] bg-white text-[#566166] hover:bg-slate-50"
+        }`}
+        key={key}
+        onClick={() =>
+          setEditableDraft((prev) => (prev ? { ...prev, [key]: !prev[key] } : prev))
+        }
+        type="button"
+      >
+        <span
+          className="material-symbols-outlined text-sm"
+          style={{ fontVariationSettings: `'FILL' ${val ? 1 : 0}` }}
+        >
+          {val ? "check_box" : "check_box_outline_blank"}
+        </span>
+        {label}
+      </button>
+    );
+  }
+
+  function syncAmountFromLines(lines: EditableServiceLine[]): string {
+    const total = lines.reduce((sum, l) => sum + (parseFloat(l.charge_amount) || 0), 0);
+    return total > 0 ? total.toFixed(2) : "";
+  }
+
+  function updateServiceLine(index: number, key: keyof EditableServiceLine, value: string) {
+    setEditableDraft((prev) => {
+      if (!prev) return prev;
+      const lines = [...prev._serviceLines];
+      lines[index] = { ...lines[index], [key]: value };
+      const newAmount = syncAmountFromLines(lines);
+      return { ...prev, _serviceLines: lines, ...(newAmount ? { amount_raw: newAmount } : {}) };
+    });
+  }
+  function addServiceLine() {
+    setEditableDraft((prev) => {
+      if (!prev) return prev;
+      const lines = [
+        ...prev._serviceLines,
+        { procedure_code: "", modifiers_raw: "", diagnosis_pointers_raw: "", units: "1", charge_amount: "" },
+      ];
+      return { ...prev, _serviceLines: lines };
+    });
+  }
+  function removeServiceLine(index: number) {
+    setEditableDraft((prev) => {
+      if (!prev) return prev;
+      const lines = prev._serviceLines.filter((_, i) => i !== index);
+      const newAmount = syncAmountFromLines(lines);
+      return { ...prev, _serviceLines: lines, ...(newAmount ? { amount_raw: newAmount } : {}) };
+    });
+  }
+
   // Renders a labelled editable input for the draft review form.
   // Dynamically highlights fields that are still missing or low-confidence.
   function renderInputField(
@@ -210,14 +508,14 @@ export function IntakePolicyPage({
     backendKey: string,
     label: string,
     placeholder: string,
-    opts: { fullWidth?: boolean; multiline?: boolean } = {},
+    opts: { fullWidth?: boolean; multiline?: boolean; forceHighlight?: boolean } = {},
   ) {
     if (!editableDraft) return null;
     const val = String(editableDraft[editKey]);
     const isEmpty = val.trim() === "";
     const wasOriginallyMissing = missingSet.has(backendKey);
     const lowConf = lowConfMap.get(backendKey);
-    const stillMissing = wasOriginallyMissing && isEmpty;
+    const stillMissing = (wasOriginallyMissing && isEmpty) || (opts.forceHighlight ?? false);
 
     const inputClass = [
       "w-full rounded-sm border px-3 py-2 text-sm text-[#2a3439] outline-none focus:ring-1",
@@ -388,127 +686,349 @@ export function IntakePolicyPage({
 
           <div className="p-6">
             {aiDraft && editableDraft ? (
-              /* ── Draft Review (editable) ── */
-              <div className="space-y-5">
-                {/* Extraction summary */}
-                <div className="flex items-start gap-3 rounded-sm bg-[#f0f4f7] px-4 py-3">
-                  <span
-                    className="material-symbols-outlined mt-0.5 text-[#0053dc]"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    auto_awesome
-                  </span>
-                  <div className="flex-1">
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="rounded-sm bg-[#0053dc]/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#0053dc]">
-                        {aiDraft.source_type}
-                      </span>
+              /* ── Draft Review: OCR Workspace (two-panel) ── */
+              <div className="-mx-6 -mb-6 grid gap-0 divide-x divide-[rgba(169,180,185,0.15)] lg:grid-cols-[300px_1fr]">
+
+                {/* ══ LEFT: Document Intelligence Panel ══ */}
+                <div className="space-y-4 overflow-y-auto bg-[#f7f9fb] px-5 py-5" style={{ maxHeight: "80vh" }}>
+
+                  {/* Document header */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-sm bg-[#0053dc]/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#0053dc]">
+                          {aiDraft.source_type}
+                        </span>
+                        {aiDraft.ready_for_processing ? (
+                          <span className="rounded-sm bg-emerald-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700">
+                            Ready
+                          </span>
+                        ) : (
+                          <span className="rounded-sm bg-amber-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700">
+                            Needs Review
+                          </span>
+                        )}
+                      </div>
                       {aiFile && (
-                        <span className="text-[10px] text-slate-400">{aiFile.name}</span>
+                        <p className="text-[11px] font-semibold text-[#2a3439]">{aiFile.name}</p>
                       )}
                     </div>
-                    <p className="text-xs font-medium text-[#2a3439]">{aiDraft.extraction_summary}</p>
+                    <button
+                      className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-[#566166] hover:text-[#0053dc]"
+                      onClick={resetAiIntake}
+                      type="button"
+                    >
+                      ← New
+                    </button>
                   </div>
-                  <button
-                    className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-[#566166] hover:text-[#0053dc]"
-                    onClick={resetAiIntake}
-                    type="button"
-                  >
-                    ← Start Over
-                  </button>
-                </div>
 
-                {/* Dynamic missing-fields callout */}
-                {stillMissingCount > 0 && (
-                  <div className="flex items-start gap-2 rounded-sm border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
-                    <span className="material-symbols-outlined mt-0.5 text-sm text-amber-600">warning</span>
-                    <p className="text-xs font-semibold text-amber-800">
-                      {stillMissingCount} field{stillMissingCount !== 1 ? "s" : ""} still need{stillMissingCount === 1 ? "s" : ""} input before this claim can be processed.
-                      Fields marked <span className="font-bold">Required</span> must be filled.
-                    </p>
-                  </div>
-                )}
-
-                {/* Editable field grid */}
-                <div className="grid grid-cols-2 gap-3">
-                  {renderInputField("member_name", "member_name", "Member Name", "Elena Martinez")}
-                  {renderInputField("member_id", "member_id", "Member ID", "M-4421907")}
-                  {renderInputField("provider_name", "provider_name", "Provider Name", "Front Range Family Medicine")}
-                  {renderInputField("payer_name", "payer_name", "Payer", "Apex Health Plan")}
-                  {renderInputField("plan_name", "plan_name", "Plan", "Commercial PPO 500")}
-                  {renderInputField("date_of_service", "date_of_service", "Date of Service", "2026-03-01")}
-                  {renderInputField("amount_raw", "amount", "Billed Amount ($)", "150.00")}
-                  {renderInputField("place_of_service", "place_of_service", "Place of Service", "11")}
-                  {renderInputField(
-                    "diagnosis_codes_raw",
-                    "diagnosis_codes",
-                    "Diagnosis Codes",
-                    "E11.9, I10",
-                    { fullWidth: true },
-                  )}
-                  {renderInputField(
-                    "procedure_codes_raw",
-                    "procedure_codes",
-                    "Procedure Codes",
-                    "99213",
-                    { fullWidth: true },
-                  )}
-                </div>
-
-                {/* Review notes from AI */}
-                {aiDraft.review_notes.length > 0 && (
-                  <div className="rounded-sm border border-amber-100 bg-amber-50 px-4 py-3">
-                    <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-amber-700">
-                      AI Review Notes
-                    </p>
-                    <ul className="space-y-1">
-                      {aiDraft.review_notes.map((note, i) => (
-                        <li className="flex items-start gap-2 text-xs text-amber-800" key={i}>
-                          <span className="mt-0.5 shrink-0 text-amber-500">›</span>
-                          {note}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Error */}
-                {aiError && (
-                  <div className="flex items-start gap-3 rounded-sm border-l-4 border-[#c94b41] bg-[#fdeceb] px-4 py-3">
-                    <span className="material-symbols-outlined mt-0.5 text-sm text-[#c94b41]">error</span>
-                    <p className="text-xs font-semibold text-[#752121]">{aiError}</p>
-                  </div>
-                )}
-
-                {/* CTA */}
-                <div className="flex items-center gap-3 border-t border-slate-100 pt-5">
-                  <button
-                    className={`flex items-center gap-2 rounded-sm px-6 py-2.5 text-xs font-bold tracking-tight text-white disabled:opacity-60 ${
-                      isReadyToProcess
-                        ? "bg-gradient-to-br from-[#0053dc] to-[#0049c2] shadow-[0_4px_12px_rgba(0,83,220,0.18)]"
-                        : "bg-amber-400"
-                    }`}
-                    disabled={!isReadyToProcess || isAiProcessing}
-                    onClick={() => void handleSubmitReviewedDraft()}
-                    type="button"
-                  >
+                  {/* Extraction summary */}
+                  <div className="flex items-start gap-2 rounded-sm bg-white px-3 py-3 shadow-[0_1px_4px_rgba(15,23,42,0.05)]">
                     <span
-                      className="material-symbols-outlined text-sm"
+                      className="material-symbols-outlined mt-0.5 shrink-0 text-[14px] text-[#0053dc]"
                       style={{ fontVariationSettings: "'FILL' 1" }}
                     >
-                      {isAiProcessing ? "pending" : isReadyToProcess ? "send" : "edit_note"}
+                      auto_awesome
                     </span>
-                    {isAiProcessing
-                      ? "Processing…"
-                      : isReadyToProcess
-                      ? "Process Claim"
-                      : "Review & Complete Draft"}
-                  </button>
-                  {!isReadyToProcess && !isAiProcessing && (
-                    <p className="text-[11px] text-amber-700">
-                      Fill in the highlighted required fields to continue.
-                    </p>
+                    <p className="text-[11px] leading-5 text-[#2a3439]">{aiDraft.extraction_summary}</p>
+                  </div>
+
+                  {/* Missing fields — prominent callout */}
+                  {aiDraft.missing_fields.length > 0 && (
+                    <div className="rounded-sm border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+                      <p className="mb-2 text-[9px] font-extrabold uppercase tracking-widest text-amber-700">
+                        Missing Fields
+                      </p>
+                      <ul className="space-y-1">
+                        {aiDraft.missing_fields.map((f) => (
+                          <li key={f} className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
+                            <span
+                              className="material-symbols-outlined text-[13px] text-amber-500"
+                              style={{ fontVariationSettings: "'FILL' 1" }}
+                            >
+                              error
+                            </span>
+                            {f.replace(/_/g, " ")}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
+
+                  {/* Extracted packet fields */}
+                  <div>
+                    <p className="mb-2 text-[9px] font-extrabold uppercase tracking-[0.18em] text-[#0053dc]">
+                      Extracted Packet
+                    </p>
+                    <div className="space-y-1.5">
+                      {(
+                        [
+                          { label: "Member", value: [editableDraft.member_name, editableDraft.member_id].filter(Boolean).join(" · "), field: "member_name" },
+                          { label: "Payer / Plan", value: [editableDraft.payer_name, editableDraft.plan_name].filter(Boolean).join(" / "), field: "payer_name" },
+                          { label: "Provider", value: editableDraft.provider_name, field: "provider_name" },
+                          { label: "Facility", value: editableDraft.facility_name, field: "facility_name" },
+                          { label: "Facility NPI", value: editableDraft.facility_npi, field: "facility_npi" },
+                          { label: "Referring Provider", value: editableDraft.referring_provider_name, field: "referring_provider_id" },
+                          { label: "ICD-10", value: editableDraft.diagnosis_codes_raw, field: "diagnosis_codes" },
+                          { label: "CPT / HCPCS", value: editableDraft.procedure_codes_raw, field: "procedure_codes" },
+                          { label: "Date of Service", value: editableDraft.date_of_service, field: "date_of_service" },
+                          {
+                            label: "Billed Amount",
+                            value: editableDraft.amount_raw
+                              ? `$${parseFloat(editableDraft.amount_raw).toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+                              : "",
+                            field: "amount",
+                          },
+                          { label: "Prior Auth ID", value: editableDraft.prior_auth_id, field: "prior_authorization_id" },
+                        ] as { label: string; value: string; field: string }[]
+                      ).map(({ label, value, field }) => {
+                        const isMissing = missingSet.has(field) && !value?.trim();
+                        const lowConf = lowConfMap.get(field);
+                        const hasValue = value?.trim();
+                        return (
+                          <div
+                            key={`${field}-${label}`}
+                            className="flex items-start gap-2 rounded-sm bg-white px-3 py-2 shadow-[0_1px_3px_rgba(15,23,42,0.04)]"
+                          >
+                            <span
+                              className={`material-symbols-outlined mt-0.5 shrink-0 text-[14px] ${
+                                isMissing
+                                  ? "text-amber-500"
+                                  : lowConf
+                                  ? "text-yellow-500"
+                                  : hasValue
+                                  ? "text-emerald-500"
+                                  : "text-slate-200"
+                              }`}
+                              style={{ fontVariationSettings: "'FILL' 1" }}
+                            >
+                              {isMissing ? "error" : lowConf ? "warning" : hasValue ? "check_circle" : "radio_button_unchecked"}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+                              {isMissing ? (
+                                <p className="text-[11px] font-bold text-amber-700">Not found in packet</p>
+                              ) : (
+                                <p className="truncate text-[11px] font-semibold text-[#2a3439]">{value || "—"}</p>
+                              )}
+                              {lowConf && (
+                                <p className="mt-0.5 text-[10px] leading-4 text-yellow-600">{lowConf.reason}</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* AI review notes */}
+                  {aiDraft.review_notes.length > 0 && (
+                    <div className="rounded-sm border border-amber-100 bg-amber-50 px-4 py-3">
+                      <p className="mb-2 text-[9px] font-bold uppercase tracking-widest text-amber-700">
+                        AI Review Notes
+                      </p>
+                      <ul className="space-y-1.5">
+                        {aiDraft.review_notes.map((note, i) => (
+                          <li key={i} className="flex items-start gap-2 text-[11px] leading-4 text-amber-800">
+                            <span className="mt-0.5 shrink-0 text-amber-500">›</span>
+                            {note}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Readiness indicator */}
+                  <div
+                    className={`flex items-center gap-2 rounded-sm px-3 py-2.5 text-[11px] font-bold ${
+                      isReadyToProcess ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    <span
+                      className="material-symbols-outlined text-[15px]"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      {isReadyToProcess ? "check_circle" : "pending"}
+                    </span>
+                    {isReadyToProcess
+                      ? "Ready to process"
+                      : `${stillMissingCount} field${stillMissingCount !== 1 ? "s" : ""} need${stillMissingCount === 1 ? "s" : ""} attention`}
+                  </div>
+                </div>
+
+                {/* ══ RIGHT: Editable Claim Draft ══ */}
+                <div className="space-y-5 overflow-y-auto px-6 py-5" style={{ maxHeight: "80vh" }}>
+
+                  {/* Missing-fields callout */}
+                  {stillMissingCount > 0 && (
+                    <div className="flex items-start gap-2 rounded-sm border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+                      <span className="material-symbols-outlined mt-0.5 text-sm text-amber-600">warning</span>
+                      <p className="text-xs font-semibold text-amber-800">
+                        {stillMissingCount} field{stillMissingCount !== 1 ? "s" : ""} still need{stillMissingCount === 1 ? "s" : ""} input.{" "}
+                        Fields marked <span className="font-bold">Required</span> must be filled.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Editable field sections */}
+                  <div className="space-y-6">
+                    {/* ── Section: Claim ── */}
+                    <FormSection label="Claim">
+                      <div className="grid grid-cols-2 gap-3">
+                        {renderInputField("claim_id", "claim_id", "Claim ID", "CLM-...")}
+                        {renderInputField("date_of_service", "date_of_service", "Date of Service", "2026-03-01")}
+                        {renderInputField("payer_name", "payer_name", "Payer", "Apex Health Plan")}
+                        {renderInputField("plan_name", "plan_name", "Plan", "Commercial PPO 500")}
+                        {renderInputField("place_of_service", "place_of_service", "Place of Service", "11")}
+                        {renderInputField("amount_raw", "amount", "Total Billed ($)", "150.00")}
+                      </div>
+                    </FormSection>
+
+                    {/* ── Section: Member ── */}
+                    <FormSection label="Member">
+                      <div className="grid grid-cols-2 gap-3">
+                        {renderInputField("member_name", "member_name", "Member Name", "Elena Martinez")}
+                        {renderInputField("member_id", "member_id", "Member ID", "M-4421907")}
+                        {renderInputField("member_dob", "member_date_of_birth", "Date of Birth", "1984-06-15")}
+                        {renderSelectField("member_gender", "member_gender", "Gender", [
+                          { value: "", label: "— not specified —" },
+                          { value: "female", label: "Female" },
+                          { value: "male", label: "Male" },
+                          { value: "other", label: "Other" },
+                          { value: "unknown", label: "Unknown" },
+                        ])}
+                        {renderSelectField("subscriber_relationship", "subscriber_relationship", "Subscriber Relationship", [
+                          { value: "self", label: "Self" },
+                          { value: "spouse", label: "Spouse" },
+                          { value: "child", label: "Child" },
+                          { value: "other", label: "Other" },
+                        ])}
+                      </div>
+                    </FormSection>
+
+                    {/* ── Section: Provider Roles ── */}
+                    <FormSection label="Provider Roles">
+                      <div className="grid grid-cols-2 gap-3">
+                        {renderInputField("provider_name", "provider_name", "Provider Name", "Front Range Family Medicine")}
+                        {renderInputField("provider_id", "provider_id", "Provider ID", "PRV-4092")}
+                        {renderInputField("billing_provider_name", "billing_provider_name", "Billing Provider Name", "Front Range Family Medicine")}
+                        {renderInputField("billing_provider_id", "billing_provider_id", "Billing Provider ID", "PRV-4092")}
+                        {renderInputField("rendering_provider_name", "rendering_provider_name", "Rendering Provider", "Dr. Smith")}
+                        {renderInputField("rendering_provider_id", "rendering_provider_id", "Rendering Provider ID", "PRV-...")}
+                        {renderInputField("referring_provider_name", "referring_provider_name", "Referring Provider", "Dr. Jones")}
+                        {renderInputField("referring_provider_id", "referring_provider_id", "Referring Provider ID", "PRV-...")}
+                      </div>
+                    </FormSection>
+
+                    {/* ── Section: Facility ── */}
+                    <FormSection label="Facility">
+                      <div className="grid grid-cols-2 gap-3">
+                        {renderInputField("facility_name", "facility_name", "Facility Name", "Memorial Outpatient Center")}
+                        {renderInputField("facility_npi", "facility_npi", "Facility NPI", "1234567890")}
+                      </div>
+                    </FormSection>
+
+                    {/* ── Section: Authorization & Referral ── */}
+                    <FormSection label="Authorization & Referral">
+                      <div className="grid grid-cols-2 gap-3">
+                        {renderInputField("prior_auth_id", "prior_authorization_id", "Prior Auth ID", "PA-20260301-001")}
+                        {renderInputField("referral_id", "referral_id", "Referral ID", "REF-20260301-007")}
+                      </div>
+                    </FormSection>
+
+                    {/* ── Section: Claim Metadata ── */}
+                    <FormSection label="Claim Metadata">
+                      <div className="grid grid-cols-2 gap-3">
+                        {renderSelectField("claim_frequency_code", "claim_frequency_code", "Claim Frequency Code", [
+                          { value: "1", label: "1 — Original" },
+                          { value: "7", label: "7 — Corrected (requires payer control no.)" },
+                          { value: "8", label: "8 — Replacement (requires payer control no.)" },
+                        ])}
+                        <div>
+                          <div className="mb-1.5 flex items-center gap-2">
+                            <label className="block text-[9px] font-bold uppercase tracking-widest text-[#566166]">
+                              Payer Claim Control No.
+                            </label>
+                            {editableDraft && ["7", "8"].includes(editableDraft.claim_frequency_code) && (
+                              <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[8px] font-bold uppercase text-amber-700">
+                                Required for corrected/replacement
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            className={`w-full rounded-sm border px-3 py-2 text-sm text-[#2a3439] outline-none focus:ring-1 ${
+                              editableDraft && ["7", "8"].includes(editableDraft.claim_frequency_code)
+                                ? "border-amber-400 bg-amber-50 focus:ring-amber-400"
+                                : "border-[rgba(169,180,185,0.3)] bg-white focus:ring-[#0053dc]"
+                            }`}
+                            onChange={(e) => editableDraft && setEditableField("payer_claim_control_number", e.target.value)}
+                            placeholder="PCN-..."
+                            value={editableDraft?.payer_claim_control_number ?? ""}
+                          />
+                        </div>
+                        {renderInputField("supporting_doc_ids_raw", "supporting_document_ids", "Supporting Document IDs", "DOC-001, DOC-002", { fullWidth: true })}
+                        <div className="col-span-2 flex gap-3">
+                          {renderToggle("accident_indicator", "Accident-Related Claim")}
+                          {renderToggle("employment_related_indicator", "Employment-Related Claim")}
+                        </div>
+                      </div>
+                    </FormSection>
+
+                    {/* ── Section: Codes ── */}
+                    <FormSection label="Codes">
+                      <div className="grid grid-cols-2 gap-3">
+                        {renderInputField("diagnosis_codes_raw", "diagnosis_codes", "Diagnosis Codes (ICD-10)", "E11.9, I10", { fullWidth: true })}
+                        {renderInputField("procedure_codes_raw", "procedure_codes", "Procedure Codes (CPT/HCPCS)", "99213", { fullWidth: true })}
+                      </div>
+                    </FormSection>
+
+                    {/* ── Service Lines ── */}
+                    <ServiceLineEditor
+                      lines={editableDraft?._serviceLines ?? []}
+                      onAdd={addServiceLine}
+                      onRemove={removeServiceLine}
+                      onUpdate={updateServiceLine}
+                    />
+                  </div>
+
+                  {/* Error */}
+                  {aiError && (
+                    <div className="flex items-start gap-3 rounded-sm border-l-4 border-[#c94b41] bg-[#fdeceb] px-4 py-3">
+                      <span className="material-symbols-outlined mt-0.5 text-sm text-[#c94b41]">error</span>
+                      <p className="text-xs font-semibold text-[#752121]">{aiError}</p>
+                    </div>
+                  )}
+
+                  {/* CTA */}
+                  <div className="flex items-center gap-3 border-t border-slate-100 pt-5">
+                    <button
+                      className={`flex items-center gap-2 rounded-sm px-6 py-2.5 text-xs font-bold tracking-tight text-white disabled:opacity-60 ${
+                        isReadyToProcess
+                          ? "bg-gradient-to-br from-[#0053dc] to-[#0049c2] shadow-[0_4px_12px_rgba(0,83,220,0.18)]"
+                          : "bg-amber-400"
+                      }`}
+                      disabled={!isReadyToProcess || isAiProcessing}
+                      onClick={() => void handleSubmitReviewedDraft()}
+                      type="button"
+                    >
+                      <span
+                        className="material-symbols-outlined text-sm"
+                        style={{ fontVariationSettings: "'FILL' 1" }}
+                      >
+                        {isAiProcessing ? "pending" : isReadyToProcess ? "send" : "edit_note"}
+                      </span>
+                      {isAiProcessing
+                        ? "Processing…"
+                        : isReadyToProcess
+                        ? "Process Claim"
+                        : "Review & Complete Draft"}
+                    </button>
+                    {!isReadyToProcess && !isAiProcessing && (
+                      <p className="text-[11px] text-amber-700">
+                        Fill in the highlighted required fields to continue.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (

@@ -17,8 +17,10 @@ from app.domain.claims.models import (
     HumanReviewState,
     InsightCard,
     LowConfidenceField,
+    PayerVerificationContext,
     ProviderAdjudicationContext,
 )
+from app.domain.claims.payer_verification_service import PayerVerificationService
 from app.domain.claims.repository import get_claims_repository
 from app.main import app
 
@@ -30,6 +32,7 @@ class FakeClaimsRepository:
     def __init__(self) -> None:
         self.records: dict[str, ClaimProcessingResponse] = {}
         self.adjudication_service = AdjudicationService()
+        self.payer_verification_service = PayerVerificationService()
         self.providers_repository = type(
             "FakeProvidersRepo",
             (),
@@ -63,8 +66,21 @@ class FakeClaimsRepository:
         matched_policies,
         confidence_score,
         requires_human_review,
+        payer_verification_context=None,
     ):
         utilization_context = self.adjudication_service.build_utilization_context(claim)
+        provider_context = self._build_provider_context(
+            claim=claim,
+            provider=self.providers_repository.ensure_provider_for_tenant(
+                tenant_id=claim.payer_name.lower().replace(" ", "-"),
+                provider_id=claim.provider_id,
+                provider_name=claim.provider_name,
+            ),
+        )
+        verification_context = payer_verification_context or self.payer_verification_service.build(
+            claim,
+            provider_context=provider_context,
+        )
         response = ClaimProcessingResponse(
             claim=claim,
             status="processed",
@@ -108,7 +124,9 @@ class FakeClaimsRepository:
                     score=0.95,
                 ),
             ),
+            provider_context=provider_context,
             utilization_context=utilization_context,
+            payer_verification_context=verification_context,
         )
         self.records[claim.claim_id] = response
         return response
@@ -117,13 +135,21 @@ class FakeClaimsRepository:
         return ProviderAdjudicationContext(
             provider_key=provider.provider_key,
             provider_name=provider.name,
+            taxonomy_code="207Q00000X",
             specialty=provider.specialty,
+            subspecialty=None,
             network_status=provider.network_status,
             contract_tier=provider.contract_tier,
             contract_status=provider.contract_status,
+            credential_status="credentialed",
             network_effective_date=provider.network_effective_date,
             network_end_date=provider.network_end_date,
             participates_in_plan=True,
+            plan_participation=[],
+            facility_affiliations=[],
+            service_locations=[],
+            accepting_referrals=True,
+            surgical_privileges=False,
             specialty_match=True,
             specialty_match_reason="Provider specialty aligns with the billed service profile.",
         )
@@ -228,6 +254,8 @@ def test_process_claim_approve_path() -> None:
     assert body["decision"]["review_triggers"] == []
     assert body["utilization_context"]["utilization_level"] == "routine"
     assert body["utilization_context"]["prior_auth_required"] is False
+    assert body["payer_verification_context"]["eligibility"]["status"] == "eligible"
+    assert body["payer_verification_context"]["pricing"]["allowed_amount"] > 0
 
 
 def test_intake_document_returns_reviewable_claim_draft(monkeypatch) -> None:
@@ -398,6 +426,124 @@ def test_process_claim_prior_auth_path_surfaces_utilization_context() -> None:
     assert body["utilization_context"]["prior_auth_status"] == "pending_review"
     assert body["utilization_context"]["trigger_codes"] == ["27447"]
     assert any("prior authorization" in trigger.lower() for trigger in body["decision"]["review_triggers"])
+
+
+def test_process_claim_prior_auth_identifier_satisfies_utilization_check() -> None:
+    prior_auth_claim = get_demo_outpatient_claim().model_copy(
+        update={
+            "claim_id": "CLM-PRIOR-AUTH-SATISFIED",
+            "diagnosis_codes": ["M17.11"],
+            "procedure_codes": ["27447"],
+            "prior_authorization_id": "AUTH-27447-01",
+            "amount": 225.0,
+        }
+    )
+    prior_auth_claim.service_lines[0] = prior_auth_claim.service_lines[0].model_copy(
+        update={
+            "procedure_code": "27447",
+            "charge_amount": 225.0,
+        }
+    )
+
+    response = client.post("/api/claims/process", json=prior_auth_claim.model_dump(mode="json"))
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["utilization_context"]["prior_auth_required"] is True
+    assert body["utilization_context"]["prior_auth_status"] == "satisfied"
+    assert any(
+        check["code"] == "prior_auth_guardrail" and check["status"] == "passed"
+        for check in body["decision"]["passed_checks"]
+    )
+    assert all(issue["code"] != "prior_auth_missing" for issue in body["validation"]["issues"])
+    assert body["payer_verification_context"]["prior_authorization"]["status"] == "verified"
+
+
+def test_process_claim_referral_context_surfaces_missing_requirement() -> None:
+    referral_claim = get_demo_outpatient_claim().model_copy(
+        update={
+            "claim_id": "CLM-HMO-REFERRAL-CONTEXT",
+            "plan_name": "Apex HMO Bronze",
+            "procedure_codes": ["99245"],
+            "service_lines": [
+                get_demo_outpatient_claim().service_lines[0].model_copy(
+                    update={"procedure_code": "99245", "charge_amount": 150.0}
+                )
+            ],
+            "amount": 150.0,
+            "diagnosis_codes": ["R51.9"],
+        }
+    )
+
+    response = client.post("/api/claims/process", json=referral_claim.model_dump(mode="json"))
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["payer_verification_context"]["referral"]["required"] is True
+    assert body["payer_verification_context"]["referral"]["status"] == "missing"
+    assert any("referral" in trigger.lower() for trigger in body["decision"]["review_triggers"])
+
+
+def test_provider_context_includes_taxonomy_and_credential_checks() -> None:
+    response = client.post(
+        "/api/claims/process",
+        json=get_demo_outpatient_claim().model_dump(mode="json"),
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["provider_context"]["taxonomy_code"] == "207Q00000X"
+    assert body["provider_context"]["credential_status"] == "credentialed"
+    assert any(
+        check["code"] == "provider_credential_status" and check["status"] == "passed"
+        for check in body["decision"]["passed_checks"]
+    )
+
+
+def test_process_claim_hmo_specialist_without_referral_routes_to_review() -> None:
+    referral_claim = get_demo_outpatient_claim().model_copy(
+        update={
+            "claim_id": "CLM-HMO-REFERRAL-REVIEW",
+            "plan_name": "Apex HMO Bronze",
+            "diagnosis_codes": ["M17.11"],
+            "procedure_codes": ["27447"],
+            "amount": 225.0,
+        }
+    )
+    referral_claim.service_lines[0] = referral_claim.service_lines[0].model_copy(
+        update={
+            "procedure_code": "27447",
+            "charge_amount": 225.0,
+        }
+    )
+
+    response = client.post("/api/claims/process", json=referral_claim.model_dump(mode="json"))
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["decision"]["outcome"] == "review"
+    assert any(issue["code"] == "referral_missing" for issue in body["validation"]["issues"])
+    assert any("referral" in trigger.lower() for trigger in body["decision"]["review_triggers"])
+
+
+def test_process_claim_corrected_frequency_without_control_number_stays_reviewable() -> None:
+    corrected_claim = get_demo_outpatient_claim().model_copy(
+        update={
+            "claim_id": "CLM-CORRECTED-REVIEW",
+            "claim_frequency_code": "7",
+        }
+    )
+
+    response = client.post("/api/claims/process", json=corrected_claim.model_dump(mode="json"))
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["decision"]["outcome"] == "review"
+    assert body["validation"]["is_valid"] is True
+    assert any(
+        issue["code"] == "claim_frequency_missing_reference"
+        for issue in body["validation"]["issues"]
+    )
 
 
 def test_claim_filters_support_review_query() -> None:

@@ -39,9 +39,20 @@ class FakeProvidersRepository:
             npi=request.npi,
             tin=request.tin,
             name=request.name,
+            taxonomy_code=request.taxonomy_code,
             specialty=request.specialty,
+            subspecialty=request.subspecialty,
             network_status=request.network_status,
             contract_tier=request.contract_tier,
+            contract_status=request.contract_status,
+            credential_status=request.credential_status,
+            network_effective_date=request.network_effective_date,
+            network_end_date=request.network_end_date,
+            plan_participation=request.plan_participation,
+            facility_affiliations=request.facility_affiliations,
+            service_locations=request.service_locations,
+            accepting_referrals=request.accepting_referrals,
+            surgical_privileges=request.surgical_privileges,
             active=request.active,
             metadata={**request.metadata, "tenant_key": request.tenant_key},
         )
@@ -61,7 +72,11 @@ def test_create_provider() -> None:
             "provider_key": "prv-4092",
             "name": "Front Range Family Medicine",
             "npi": "1299304491",
+            "taxonomy_code": "207Q00000X",
             "specialty": "Family Medicine",
+            "credential_status": "credentialed",
+            "plan_participation": ["Apex PPO Gold"],
+            "facility_affiliations": ["Front Range Family Medicine"],
             "network_status": "in_network",
         },
     )
@@ -70,6 +85,8 @@ def test_create_provider() -> None:
     assert response.status_code == 200
     assert body["provider_key"] == "prv-4092"
     assert body["name"] == "Front Range Family Medicine"
+    assert body["taxonomy_code"] == "207Q00000X"
+    assert body["credential_status"] == "credentialed"
 
 
 def test_list_providers_filters_by_tenant_key() -> None:

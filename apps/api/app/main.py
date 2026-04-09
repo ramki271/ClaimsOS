@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.routes.agent import router as agent_router
 from app.api.v1.routes.claims import router as claims_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.members import router as members_router
@@ -25,6 +26,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router, prefix=settings.api_prefix)
+app.include_router(agent_router, prefix=settings.api_prefix)
 app.include_router(claims_router, prefix=settings.api_prefix)
 app.include_router(members_router, prefix=settings.api_prefix)
 app.include_router(policies_router, prefix=settings.api_prefix)

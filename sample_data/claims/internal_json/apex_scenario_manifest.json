@@ -1,0 +1,65 @@
+{
+  "payer_name": "Apex Health Plan",
+  "scenario_pack": "advanced_claim_realism_pack",
+  "recommended_provider_seed_file": "sample_data/providers/apex_provider_seed_pack.json",
+  "recommended_policy_files": [
+    "sample_data/policies/APX-COM-500-EM-99213.md",
+    "sample_data/policies/APX-PRIORAUTH-ORTHO-2026.md",
+    "sample_data/policies/APX-DUP-FREQ-2026.md",
+    "sample_data/policies/APX-REFERRAL-HMO-SPECIALIST-2026.md",
+    "sample_data/policies/APX-PROVIDER-CREDENTIALING-2026.md",
+    "sample_data/policies/APX-SPECIALTY-TAXONOMY-2026.md",
+    "sample_data/policies/APX-FACILITY-SITE-OF-CARE-2026.md",
+    "sample_data/policies/APX-PROF-ALLOWABLES-2026.md"
+  ],
+  "scenarios": [
+    {
+      "claim_id": "CLM-SCEN-APPROVE-1001",
+      "file": "sample_data/claims/internal_json/advanced/CLM-SCEN-APPROVE-1001.json",
+      "expected_outcome": "approve",
+      "member_id": "M-4421907",
+      "provider_key": "PRV-4092",
+      "notes": "Clean in-network primary care claim with pricing adjustment but no review triggers."
+    },
+    {
+      "claim_id": "CLM-SCEN-REFERRAL-1002",
+      "file": "sample_data/claims/internal_json/advanced/CLM-SCEN-REFERRAL-1002.json",
+      "expected_outcome": "review",
+      "member_id": "M-7712044",
+      "provider_key": "PRV-CARD-300",
+      "notes": "HMO cardiology claim missing referral."
+    },
+    {
+      "claim_id": "CLM-SCEN-ORTHO-AUTH-1003",
+      "file": "sample_data/claims/internal_json/advanced/CLM-SCEN-ORTHO-AUTH-1003.json",
+      "expected_outcome": "review",
+      "member_id": "M-9011182",
+      "provider_key": "PRV-ORTHO-100",
+      "notes": "Orthopedic surgery claim missing prior authorization."
+    },
+    {
+      "claim_id": "CLM-SCEN-FACILITY-1004",
+      "file": "sample_data/claims/internal_json/advanced/CLM-SCEN-FACILITY-1004.json",
+      "expected_outcome": "review",
+      "member_id": "M-9011182",
+      "provider_key": "PRV-ORTHO-200",
+      "notes": "Provisional provider with facility affiliation mismatch and referral acceptance issue."
+    },
+    {
+      "claim_id": "CLM-SCEN-SANCTION-1005",
+      "file": "sample_data/claims/internal_json/advanced/CLM-SCEN-SANCTION-1005.json",
+      "expected_outcome": "deny",
+      "member_id": "M-4421907",
+      "provider_key": "PRV-SANCTION-400",
+      "notes": "Sanctioned provider forces denial even with otherwise compatible orthopedic procedure profile."
+    },
+    {
+      "claim_id": "CLM-SCEN-CORRECTED-1006",
+      "file": "sample_data/claims/internal_json/advanced/CLM-SCEN-CORRECTED-1006.json",
+      "expected_outcome": "review",
+      "member_id": "M-4421907",
+      "provider_key": "PRV-4092",
+      "notes": "Corrected claim missing payer control number."
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "status": "drafted",
+  "source_type": "pdf",
+  "extraction_summary": "Two-page orthopedic fax packet extracted for Harold Bennett. Member, provider roles, facility, diagnosis M17.11, CPT 27447, and billed amount were recovered. No prior authorization number was found in the packet.",
+  "claim_draft": {
+    "claim_id": "OCR-CLM-ORTHO-3001",
+    "claim_type": "professional_outpatient",
+    "form_type": "CMS-1500",
+    "payer_name": "Apex Health Plan",
+    "plan_name": "Apex Medicare Advantage Choice",
+    "member_id": "M-9011182",
+    "member_name": "Harold Bennett",
+    "member_date_of_birth": "1953-11-02",
+    "member_gender": "male",
+    "subscriber_relationship": "self",
+    "patient_id": "PAT-1182",
+    "provider_id": "PRV-ORTHO-100",
+    "provider_name": "Rocky Mountain Orthopedics",
+    "billing_provider_id": "PRV-ORTHO-100",
+    "billing_provider_name": "Rocky Mountain Orthopedics",
+    "rendering_provider_id": "PRV-ORTHO-100",
+    "rendering_provider_name": "Rocky Mountain Orthopedics",
+    "referring_provider_id": "PCP-9001",
+    "referring_provider_name": "Dr. Susan Whitaker",
+    "facility_name": "St. Anthony Hospital, Lakewood",
+    "facility_npi": "1776600101",
+    "prior_authorization_id": null,
+    "referral_id": null,
+    "claim_frequency_code": "1",
+    "payer_claim_control_number": null,
+    "accident_indicator": false,
+    "employment_related_indicator": false,
+    "supporting_document_ids": [
+      "FAX-COVER-ORTHO-3001",
+      "SURGICAL-SCHEDULING-SHEET-3001"
+    ],
+    "place_of_service": "22",
+    "diagnosis_codes": [
+      "M17.11"
+    ],
+    "procedure_codes": [
+      "27447"
+    ],
+    "service_lines": [
+      {
+        "line_number": 1,
+        "procedure_code": "27447",
+        "modifiers": [],
+        "diagnosis_pointers": [
+          1
+        ],
+        "units": 1,
+        "charge_amount": 980.0
+      }
+    ],
+    "amount": 980.0,
+    "date_of_service": "2026-04-21"
+  },
+  "ready_for_processing": false,
+  "missing_fields": [
+    "prior_authorization_id"
+  ],
+  "review_notes": [
+    "Orthopedic surgery procedure 27447 typically requires prior authorization for Apex Medicare Advantage Choice.",
+    "The packet references scheduled surgery, but no authorization number is present on the fax cover or claim summary."
+  ],
+  "low_confidence_fields": [
+    {
+      "field": "facility_npi",
+      "confidence": "medium",
+      "reason": "Fax quality may blur one or more digits in the facility NPI."
+    },
+    {
+      "field": "referring_provider_id",
+      "confidence": "medium",
+      "reason": "Referring identifier may be handwritten or abbreviated in packet notes."
+    }
+  ],
+  "processed_result": null
+}

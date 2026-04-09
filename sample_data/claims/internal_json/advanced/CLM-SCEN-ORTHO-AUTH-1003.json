@@ -1,0 +1,36 @@
+{
+  "claim_id": "CLM-SCEN-ORTHO-AUTH-1003",
+  "claim_type": "professional_outpatient",
+  "form_type": "CMS-1500",
+  "payer_name": "Apex Health Plan",
+  "plan_name": "Apex Medicare Advantage Choice",
+  "member_id": "M-9011182",
+  "member_name": "Harold Bennett",
+  "member_date_of_birth": "1953-11-02",
+  "member_gender": "male",
+  "subscriber_relationship": "self",
+  "patient_id": "PAT-1182",
+  "provider_id": "PRV-ORTHO-100",
+  "provider_name": "Rocky Mountain Orthopedics",
+  "billing_provider_id": "PRV-ORTHO-100",
+  "billing_provider_name": "Rocky Mountain Orthopedics",
+  "rendering_provider_id": "PRV-ORTHO-100",
+  "rendering_provider_name": "Rocky Mountain Orthopedics",
+  "facility_name": "St. Anthony Hospital, Lakewood",
+  "claim_frequency_code": "1",
+  "place_of_service": "22",
+  "diagnosis_codes": ["M17.11"],
+  "procedure_codes": ["27447"],
+  "service_lines": [
+    {
+      "line_number": 1,
+      "procedure_code": "27447",
+      "modifiers": [],
+      "diagnosis_pointers": [1],
+      "units": 1,
+      "charge_amount": 980.0
+    }
+  ],
+  "amount": 980.0,
+  "date_of_service": "2026-04-21"
+}

@@ -1,0 +1,37 @@
+{
+  "claim_id": "CLM-SCEN-SANCTION-1005",
+  "claim_type": "professional_outpatient",
+  "form_type": "CMS-1500",
+  "payer_name": "Apex Health Plan",
+  "plan_name": "Commercial PPO 500",
+  "member_id": "M-4421907",
+  "member_name": "Elena Martinez",
+  "member_date_of_birth": "1980-01-01",
+  "member_gender": "female",
+  "subscriber_relationship": "self",
+  "patient_id": "PAT-1007",
+  "provider_id": "PRV-SANCTION-400",
+  "provider_name": "Denver Advanced Procedures",
+  "billing_provider_id": "PRV-SANCTION-400",
+  "billing_provider_name": "Denver Advanced Procedures",
+  "rendering_provider_id": "PRV-SANCTION-400",
+  "rendering_provider_name": "Denver Advanced Procedures",
+  "facility_name": "Denver Advanced Procedures Center",
+  "prior_authorization_id": "AUTH-29881-01",
+  "claim_frequency_code": "1",
+  "place_of_service": "22",
+  "diagnosis_codes": ["M17.11"],
+  "procedure_codes": ["29881"],
+  "service_lines": [
+    {
+      "line_number": 1,
+      "procedure_code": "29881",
+      "modifiers": ["59"],
+      "diagnosis_pointers": [1],
+      "units": 1,
+      "charge_amount": 640.0
+    }
+  ],
+  "amount": 640.0,
+  "date_of_service": "2026-04-27"
+}

@@ -6,6 +6,11 @@ Files:
 - `clean_claim_form.pdf`
 - `clean_claim_form.png`
 - `messy_scanned_claim.png`
+- `APX-OCR-HERO-ORTHO-3001.pdf`
+- `APX-OCR-HERO-ORTHO-3001.png`
+- `APX-OCR-HERO-ORTHO-3001.md`
+- `APX-OCR-HERO-ORTHO-3001.expected-draft.json`
+- `APX-OCR-HERO-ORTHO-3001.expected-outcome.md`
 
 Recommended usage:
 - `clean_claim_form.pdf`
@@ -21,5 +26,12 @@ Suggested demo flow:
 3. Process the reviewed draft into adjudication
 4. Upload `messy_scanned_claim.png`
 5. Show low-confidence fields / missing-field review
+
+Recommended hero flow for the richer claim model:
+1. Upload `APX-OCR-HERO-ORTHO-3001.pdf` or `APX-OCR-HERO-ORTHO-3001.png`
+2. Show that AI intake extracts member, provider, facility, diagnosis, CPT, and billed amount
+3. Highlight the missing `prior_authorization_id`
+4. Compare the extracted draft against `APX-OCR-HERO-ORTHO-3001.expected-draft.json`
+5. Process the draft and land in the expected `review` path described in `APX-OCR-HERO-ORTHO-3001.expected-outcome.md`
 
 These are synthetic demo artifacts only and do not contain real patient data.

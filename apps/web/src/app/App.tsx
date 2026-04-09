@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AgentChatWidget } from "../features/agent/components/AgentChatWidget";
 import { AdjudicationPage } from "../features/adjudication/components/AdjudicationPage";
 import { ClaimsHubPage } from "../features/claims/components/ClaimsHubPage";
 import { IntakePolicyPage } from "../features/intake/components/IntakePolicyPage";
@@ -54,6 +55,7 @@ const fallbackClaim: ClaimSubmission = {
   plan_name: "Commercial PPO 500",
   member_id: "M-4421907",
   member_name: "Elena Martinez",
+  subscriber_relationship: "self",
   patient_id: "PAT-1007",
   provider_id: "PRV-4092",
   provider_name: "Front Range Family Medicine",
@@ -65,6 +67,7 @@ const fallbackClaim: ClaimSubmission = {
       line_number: 1,
       procedure_code: "99213",
       modifiers: [],
+      diagnosis_pointers: [1, 2],
       units: 1,
       charge_amount: 150,
     },
@@ -306,6 +309,7 @@ export default function App() {
   }
 
   return (
+    <>
     <AppShell activeView={activeView} setActiveView={setActiveView}>
       {activeView === "dashboard" && (
         <OverviewPage claims={claims} onSelectClaim={handleSelectClaim} />
@@ -370,5 +374,7 @@ export default function App() {
         />
       )}
     </AppShell>
+    <AgentChatWidget activeView={activeView} claimId={selectedClaimId} />
+    </>
   );
 }

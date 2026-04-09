@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
+
+from fastapi import Depends
 
 from app.domain.members.models import (
     ActiveDiagnosis,
@@ -11,6 +14,7 @@ from app.domain.members.models import (
     PolicyAlignmentItem,
     SurgicalHistoryItem,
 )
+from app.integrations.supabase import execute_with_retry, get_supabase_client
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -543,32 +547,148 @@ def _seeded_members() -> list[MemberDetailResponse]:
 
 
 class MembersRepository:
-    def __init__(self) -> None:
-        self._members = _seeded_members()
+    def __init__(self, client: Any) -> None:
+        self.client = client
 
     def list_members(self, *, tenant_key: str | None = None, limit: int = 100) -> list[MemberListItem]:
-        members = self._members
+        query = (
+            self.client.table("members")
+            .select("*, tenants!inner(tenant_key,name)")
+            .order("created_at", desc=False)
+            .limit(limit)
+        )
         if tenant_key:
-            members = [member for member in members if member.member.tenant_key == tenant_key]
-        return [
-            MemberListItem(
-                member_id=item.member.member_id,
-                tenant_key=item.member.tenant_key,
-                payer_name=item.member.payer_name,
-                member_name=item.member.member_name,
-                subscriber_id=item.member.subscriber_id,
-                plan_name=item.member.plan_name,
-                eligibility_status=item.member.eligibility_status,
-                date_of_birth=item.member.date_of_birth,
-                active_claim_count=item.member.active_claim_count,
-                last_claim_id=item.member.last_claim_id,
-            )
-            for item in members[:limit]
-        ]
+            query = query.eq("tenants.tenant_key", tenant_key)
+        rows = execute_with_retry(query).data
+        return [self._map_list_item(row) for row in rows]
 
     def get_member(self, member_id: str) -> MemberDetailResponse | None:
-        return next((item for item in self._members if item.member.member_id == member_id), None)
+        rows = (
+            execute_with_retry(
+                self.client.table("members")
+                .select("*, tenants!inner(tenant_key,name)")
+                .eq("member_id", member_id)
+                .limit(1)
+            ).data
+        )
+        if not rows:
+            return None
+        return self._map_detail(rows[0])
+
+    def _map_list_item(self, row: dict[str, Any]) -> MemberListItem:
+        tenant = row.get("tenants") or {}
+        return MemberListItem(
+            member_id=row["member_id"],
+            tenant_key=tenant.get("tenant_key", ""),
+            payer_name=tenant.get("name", ""),
+            member_name=row["member_name"],
+            subscriber_id=row["subscriber_id"],
+            plan_name=row["plan_name"],
+            eligibility_status=row["eligibility_status"],
+            date_of_birth=row["date_of_birth"],
+            active_claim_count=row.get("active_claim_count") or 0,
+            last_claim_id=row.get("last_claim_id"),
+        )
+
+    def _map_detail(self, row: dict[str, Any]) -> MemberDetailResponse:
+        tenant = row.get("tenants") or {}
+        metadata = row.get("metadata") or {}
+        member = MemberRecord(
+            member_id=row["member_id"],
+            tenant_key=tenant.get("tenant_key", ""),
+            payer_name=tenant.get("name", ""),
+            subscriber_id=row["subscriber_id"],
+            member_name=row["member_name"],
+            date_of_birth=row["date_of_birth"],
+            gender=row.get("gender") or "unknown",
+            relationship_to_subscriber=row.get("relationship_to_subscriber") or "self",
+            plan_name=row["plan_name"],
+            plan_product=row["plan_product"],
+            coverage_type=row.get("coverage_type") or "commercial",
+            eligibility_status=row.get("eligibility_status") or "active",
+            effective_date=row["effective_date"],
+            termination_date=row.get("termination_date"),
+            pcp_name=row.get("pcp_name"),
+            pcp_npi=row.get("pcp_npi"),
+            referral_required=bool(row.get("referral_required") or False),
+            prior_auth_required_for_specialty=bool(row.get("prior_auth_required_for_specialty") or False),
+            address_line_1=row.get("address_line_1"),
+            city=row.get("city"),
+            state=row.get("state"),
+            postal_code=row.get("postal_code"),
+            phone=row.get("phone"),
+            email=row.get("email"),
+            risk_flags=list(row.get("risk_flags") or []),
+            active_claim_count=row.get("active_claim_count") or 0,
+            last_claim_id=row.get("last_claim_id"),
+            metadata=metadata.get("member_metadata") or {},
+            created_at=row.get("created_at"),
+        )
+        return MemberDetailResponse(
+            member=member,
+            recent_claim_ids=list(metadata.get("recent_claim_ids") or []),
+            coverage_notes=list(metadata.get("coverage_notes") or []),
+            plan_tier=metadata.get("plan_tier") or "",
+            deductible_met=metadata.get("deductible_met") or "",
+            deductible_max=metadata.get("deductible_max") or "",
+            diagnostic_confidence=float(metadata.get("diagnostic_confidence") or 0.0),
+            clinical_hotspots=list(metadata.get("clinical_hotspots") or []),
+            active_diagnoses=list(metadata.get("active_diagnoses") or []),
+            surgical_history=list(metadata.get("surgical_history") or []),
+            policy_alignment=list(metadata.get("policy_alignment") or []),
+        )
 
 
 def get_members_repository() -> MembersRepository:
-    return MembersRepository()
+    return MembersRepository(get_supabase_client())
+
+
+def seeded_member_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in _seeded_members():
+        member = item.member
+        rows.append(
+            {
+                "tenant_key": member.tenant_key,
+                "member_id": member.member_id,
+                "subscriber_id": member.subscriber_id,
+                "member_name": member.member_name,
+                "date_of_birth": member.date_of_birth.isoformat(),
+                "gender": member.gender,
+                "relationship_to_subscriber": member.relationship_to_subscriber,
+                "plan_name": member.plan_name,
+                "plan_product": member.plan_product,
+                "coverage_type": member.coverage_type,
+                "eligibility_status": member.eligibility_status,
+                "effective_date": member.effective_date.isoformat(),
+                "termination_date": member.termination_date.isoformat() if member.termination_date else None,
+                "pcp_name": member.pcp_name,
+                "pcp_npi": member.pcp_npi,
+                "referral_required": member.referral_required,
+                "prior_auth_required_for_specialty": member.prior_auth_required_for_specialty,
+                "address_line_1": member.address_line_1,
+                "city": member.city,
+                "state": member.state,
+                "postal_code": member.postal_code,
+                "phone": member.phone,
+                "email": member.email,
+                "risk_flags": member.risk_flags,
+                "active_claim_count": member.active_claim_count,
+                "last_claim_id": member.last_claim_id,
+                "created_at": member.created_at.isoformat() if member.created_at else None,
+                "metadata": {
+                    "member_metadata": member.metadata,
+                    "recent_claim_ids": item.recent_claim_ids,
+                    "coverage_notes": item.coverage_notes,
+                    "plan_tier": item.plan_tier,
+                    "deductible_met": item.deductible_met,
+                    "deductible_max": item.deductible_max,
+                    "diagnostic_confidence": item.diagnostic_confidence,
+                    "clinical_hotspots": [entry.model_dump(mode="json") for entry in item.clinical_hotspots],
+                    "active_diagnoses": [entry.model_dump(mode="json") for entry in item.active_diagnoses],
+                    "surgical_history": [entry.model_dump(mode="json") for entry in item.surgical_history],
+                    "policy_alignment": [entry.model_dump(mode="json") for entry in item.policy_alignment],
+                },
+            }
+        )
+    return rows

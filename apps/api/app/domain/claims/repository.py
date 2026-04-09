@@ -16,10 +16,12 @@ from app.domain.claims.models import (
     ClaimSubmission,
     HumanReviewState,
     InsightCard,
+    PayerVerificationContext,
     PolicyMatch,
     ProviderAdjudicationContext,
     ValidationResult,
 )
+from app.domain.claims.payer_verification_service import PayerVerificationService
 from app.domain.claims.validation_service import ValidationIssue
 from app.domain.providers.repository import ProvidersRepository
 from app.integrations.supabase import execute_with_retry, get_supabase_client
@@ -30,6 +32,7 @@ class ClaimsRepository:
         self.client = client
         self.providers_repository = ProvidersRepository(client)
         self.adjudication_service = AdjudicationService()
+        self.payer_verification_service = PayerVerificationService()
 
     def create_processed_claim(
         self,
@@ -39,16 +42,23 @@ class ClaimsRepository:
         matched_policies: list[PolicyMatch],
         confidence_score: float,
         requires_human_review: bool,
+        payer_verification_context: PayerVerificationContext | None = None,
     ) -> ClaimProcessingResponse:
         tenant = self.providers_repository.ensure_tenant(payer_name=claim.payer_name)
+        provider_key = claim.rendering_provider_id or claim.provider_id
+        provider_name = claim.rendering_provider_name or claim.provider_name
         provider = self.providers_repository.ensure_provider_for_tenant(
             tenant_id=tenant.id or "",
-            provider_id=claim.provider_id,
-            provider_name=claim.provider_name,
+            provider_id=provider_key,
+            provider_name=provider_name,
             specialty=None,
         )
         provider_context = self._build_provider_context(claim=claim, provider=provider)
         utilization_context = self.adjudication_service.build_utilization_context(claim)
+        verification_context = payer_verification_context or self.payer_verification_service.build(
+            claim,
+            provider_context=provider_context,
+        )
         claim_payload = {
             "claim_id": claim.claim_id,
             "tenant_id": tenant.id,
@@ -59,9 +69,27 @@ class ClaimsRepository:
             "plan_name": claim.plan_name,
             "member_id": claim.member_id,
             "member_name": claim.member_name,
+            "member_date_of_birth": str(claim.member_date_of_birth) if claim.member_date_of_birth else None,
+            "member_gender": claim.member_gender,
+            "subscriber_relationship": claim.subscriber_relationship,
             "patient_id": claim.patient_id,
             "provider_id": claim.provider_id,
             "provider_name": claim.provider_name,
+            "billing_provider_id": claim.billing_provider_id,
+            "billing_provider_name": claim.billing_provider_name,
+            "rendering_provider_id": claim.rendering_provider_id,
+            "rendering_provider_name": claim.rendering_provider_name,
+            "referring_provider_id": claim.referring_provider_id,
+            "referring_provider_name": claim.referring_provider_name,
+            "facility_name": claim.facility_name,
+            "facility_npi": claim.facility_npi,
+            "prior_authorization_id": claim.prior_authorization_id,
+            "referral_id": claim.referral_id,
+            "claim_frequency_code": claim.claim_frequency_code,
+            "payer_claim_control_number": claim.payer_claim_control_number,
+            "accident_indicator": claim.accident_indicator,
+            "employment_related_indicator": claim.employment_related_indicator,
+            "supporting_document_ids": claim.supporting_document_ids,
             "place_of_service": claim.place_of_service,
             "diagnosis_codes": claim.diagnosis_codes,
             "procedure_codes": claim.procedure_codes,
@@ -139,6 +167,14 @@ class ClaimsRepository:
                     "review_trigger_count": len(decision.review_triggers),
                     "utilization_level": utilization_context.utilization_level,
                     "prior_auth_required": utilization_context.prior_auth_required,
+                    "prior_authorization_id": claim.prior_authorization_id,
+                    "referral_id": claim.referral_id,
+                    "claim_frequency_code": claim.claim_frequency_code,
+                    "eligibility_status": verification_context.eligibility.status,
+                    "prior_auth_verification_status": verification_context.prior_authorization.status,
+                    "referral_verification_status": verification_context.referral.status,
+                    "pricing_status": verification_context.pricing.status,
+                    "allowed_amount": verification_context.pricing.allowed_amount,
                 },
             ),
             (
@@ -200,6 +236,7 @@ class ClaimsRepository:
             ),
             provider_context=provider_context,
             utilization_context=utilization_context,
+            payer_verification_context=verification_context,
         )
 
     def list_claims(
@@ -427,12 +464,17 @@ class ClaimsRepository:
         ]
         provider_context = self._resolve_provider_context(claim_row=claim_row, claim=claim)
         utilization_context = self.adjudication_service.build_utilization_context(claim)
+        payer_verification_context = self.payer_verification_service.build(
+            claim,
+            provider_context=provider_context,
+        )
         decision = self.adjudication_service.explain(
             claim=claim,
             validation=validation,
             policies=matched_policies,
             provider_context=provider_context,
             utilization_context=utilization_context,
+            payer_verification_context=payer_verification_context,
             outcome=adjudication_row["outcome"],
             rationale=adjudication_row["rationale"],
             cited_rules=adjudication_row["cited_rules"],
@@ -464,6 +506,7 @@ class ClaimsRepository:
             ),
             provider_context=provider_context,
             utilization_context=utilization_context,
+            payer_verification_context=payer_verification_context,
         )
 
     def _map_review_state(self, review_row: dict[str, Any]) -> HumanReviewState:
@@ -627,12 +670,15 @@ class ClaimsRepository:
         )
         specialty_match, specialty_reason = _infer_specialty_match(
             specialty=provider.specialty,
+            taxonomy_code=getattr(provider, "taxonomy_code", None),
             procedure_codes=claim.procedure_codes,
         )
         return ProviderAdjudicationContext(
             provider_key=provider.provider_key,
             provider_name=provider.name,
+            taxonomy_code=getattr(provider, "taxonomy_code", None),
             specialty=provider.specialty,
+            subspecialty=getattr(provider, "subspecialty", None),
             network_status=provider.network_status,
             contract_tier=provider.contract_tier,
             contract_status=_resolve_contract_status(
@@ -641,9 +687,15 @@ class ClaimsRepository:
                 effective_date=provider.network_effective_date,
                 end_date=provider.network_end_date,
             ),
+            credential_status=getattr(provider, "credential_status", "credentialed"),
             network_effective_date=provider.network_effective_date,
             network_end_date=provider.network_end_date,
             participates_in_plan=participates_in_plan,
+            plan_participation=list(getattr(provider, "plan_participation", []) or []),
+            facility_affiliations=list(getattr(provider, "facility_affiliations", []) or []),
+            service_locations=list(getattr(provider, "service_locations", []) or []),
+            accepting_referrals=bool(getattr(provider, "accepting_referrals", True)),
+            surgical_privileges=bool(getattr(provider, "surgical_privileges", False)),
             specialty_match=specialty_match,
             specialty_match_reason=specialty_reason,
         )
@@ -672,27 +724,41 @@ def _resolve_contract_status(
 def _infer_specialty_match(
     *,
     specialty: str | None,
+    taxonomy_code: str | None,
     procedure_codes: list[str],
 ) -> tuple[bool | None, str | None]:
-    if not specialty:
-        return None, "Provider specialty is not populated yet."
+    if not specialty and not taxonomy_code:
+        return None, "Provider specialty and taxonomy are not populated yet."
 
-    specialty_lower = specialty.lower()
+    specialty_lower = (specialty or "").lower()
+    taxonomy = (taxonomy_code or "").upper()
     procedure_set = set(procedure_codes)
     if procedure_set.intersection({"99213", "99214"}):
-        if any(token in specialty_lower for token in {"family", "internal", "primary", "general"}):
-            return True, "Provider specialty aligns with outpatient evaluation and management services."
+        if any(token in specialty_lower for token in {"family", "internal", "primary", "general"}) or taxonomy in {
+            "207Q00000X",
+            "207R00000X",
+            "208D00000X",
+        }:
+            return True, "Provider specialty/taxonomy aligns with outpatient evaluation and management services."
         return False, "Evaluation and management visits are usually billed by primary care or general medicine specialties."
 
     if "97110" in procedure_set:
-        if any(token in specialty_lower for token in {"therapy", "rehab", "physical"}):
-            return True, "Provider specialty aligns with therapy services."
+        if any(token in specialty_lower for token in {"therapy", "rehab", "physical"}) or taxonomy in {
+            "225100000X",
+            "225X00000X",
+        }:
+            return True, "Provider specialty/taxonomy aligns with therapy services."
         return False, "Therapy procedure codes usually align with rehabilitation or therapy specialties."
 
     if "27447" in procedure_set:
-        if "ortho" in specialty_lower:
-            return True, "Provider specialty aligns with orthopedic surgery services."
+        if "ortho" in specialty_lower or taxonomy == "207X00000X":
+            return True, "Provider specialty/taxonomy aligns with orthopedic surgery services."
         return False, "Orthopedic surgery procedure codes usually require an orthopedic specialty."
+
+    if procedure_set.intersection({"29881"}):
+        if "ortho" in specialty_lower or taxonomy == "207X00000X":
+            return True, "Arthroscopy procedure profile aligns with orthopedic specialty and taxonomy."
+        return False, "Arthroscopy services usually require an orthopedic specialty or taxonomy."
 
     return None, "Specialty alignment is not yet modeled for this procedure family."
 

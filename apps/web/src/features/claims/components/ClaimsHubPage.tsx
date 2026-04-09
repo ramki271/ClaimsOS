@@ -52,113 +52,8 @@ function buildRows(claims: ClaimRecordSummary[]): HubRow[] {
   });
 }
 
-const demoRows: HubRow[] = [
-  {
-    claim_id: "#CLM-88219-X",
-    member_name: "Jonathan Doe",
-    provider_name: "Orthopedic Surgery",
-    payer_name: "Aetna",
-    claim_type: "professional_outpatient",
-    date_of_service: "2026-03-24",
-    amount: 4850,
-    outcome: "approve",
-    confidence_score: 0.982,
-    requires_human_review: false,
-    review_status: null,
-    serviceType: "Orthopedic Surgery",
-    claimantInitials: "JD",
-    displayDate: "Mar 24, 2026",
-    created_at: "2026-03-24T12:00:00Z",
-  },
-  {
-    claim_id: "#CLM-77102-Y",
-    member_name: "Sarah Kinsley",
-    provider_name: "Cardiac Imaging",
-    payer_name: "BCBS",
-    claim_type: "professional_outpatient",
-    date_of_service: "2026-03-23",
-    amount: 2140,
-    outcome: "deny",
-    confidence_score: 0.94,
-    requires_human_review: false,
-    review_status: null,
-    serviceType: "Cardiac Imaging",
-    claimantInitials: "SK",
-    displayDate: "Mar 23, 2026",
-    created_at: "2026-03-23T12:00:00Z",
-  },
-  {
-    claim_id: "#CLM-99211-P",
-    member_name: "Marcus Reed",
-    provider_name: "Physical Therapy",
-    payer_name: "Cigna",
-    claim_type: "professional_outpatient",
-    date_of_service: "2026-03-23",
-    amount: 760,
-    outcome: "review",
-    confidence_score: 0.628,
-    requires_human_review: true,
-    review_status: "in_review",
-    serviceType: "Physical Therapy",
-    claimantInitials: "MR",
-    displayDate: "Mar 23, 2026",
-    created_at: "2026-03-23T12:00:00Z",
-  },
-  {
-    claim_id: "#CLM-44321-L",
-    member_name: "Avery Long",
-    provider_name: "Gastroenterology",
-    payer_name: "Humana",
-    claim_type: "professional_outpatient",
-    date_of_service: "2026-03-22",
-    amount: 1240,
-    outcome: "approve",
-    confidence_score: 0.914,
-    requires_human_review: false,
-    review_status: null,
-    serviceType: "Gastroenterology",
-    claimantInitials: "AL",
-    displayDate: "Mar 22, 2026",
-    created_at: "2026-03-22T12:00:00Z",
-  },
-  {
-    claim_id: "#CLM-12093-T",
-    member_name: "Tina Bell",
-    provider_name: "Neurological Eval",
-    payer_name: "Aetna",
-    claim_type: "professional_outpatient",
-    date_of_service: "2026-03-22",
-    amount: 920,
-    outcome: "approve",
-    confidence_score: 0.967,
-    requires_human_review: false,
-    review_status: null,
-    serviceType: "Neurological Eval",
-    claimantInitials: "TB",
-    displayDate: "Mar 22, 2026",
-    created_at: "2026-03-22T12:00:00Z",
-  },
-  {
-    claim_id: "#CLM-55018-K",
-    member_name: "Paul Kersey",
-    provider_name: "Dermatology Path",
-    payer_name: "BCBS",
-    claim_type: "professional_outpatient",
-    date_of_service: "2026-03-21",
-    amount: 680,
-    outcome: "deny",
-    confidence_score: 0.891,
-    requires_human_review: false,
-    review_status: null,
-    serviceType: "Dermatology Path",
-    claimantInitials: "PK",
-    displayDate: "Mar 21, 2026",
-    created_at: "2026-03-21T12:00:00Z",
-  },
-];
-
 export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange, onOpenClaim }: ClaimsHubPageProps) {
-  const rows = claims.length ? buildRows(claims) : demoRows;
+  const rows = buildRows(claims);
 
   // Sidebar state — tracks which row is "focused" for the detail preview
   const [activeRowId, setActiveRowId] = useState<string | null>(selectedClaimId);
@@ -187,7 +82,7 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
       setActiveRowId(nextClaimId);
     }
 
-    if (!nextClaimId || nextClaimId.startsWith("#")) {
+    if (!nextClaimId) {
       setSidebarDetail(null);
       setIsSidebarLoading(false);
       return;
@@ -224,7 +119,6 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
   }, [rows, selectedClaimId, activeRowId, sidebarDetail?.claim.claim_id]);
 
   async function handleRowSelect(claim: HubRow) {
-    if (claim.claim_id.startsWith("#")) return; // demo row — no backend data
     if (claim.claim_id === activeRowId) return;
     setActiveRowId(claim.claim_id);
     setSidebarDetail(null);
@@ -320,21 +214,17 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
 
         {/* Rows */}
         <div className="divide-y divide-slate-50">
-          {rows.map((claim) => {
+          {rows.length ? rows.map((claim) => {
             const isActive = (activeRowId ?? selectedClaimId) === claim.claim_id;
-            const isDemo = claim.claim_id.startsWith("#");
             return (
               <button
                 className={`grid w-full grid-cols-[1.1fr_1.6fr_1.35fr_1fr_1.1fr_1fr] gap-4 bg-white px-6 py-5 text-left transition-colors ${
                   isActive
                     ? "shadow-[inset_3px_0_0_0_#0053dc] bg-[#f9fbff]"
-                    : isDemo
-                      ? "cursor-default opacity-70"
-                      : "hover:bg-[#fbfdff]"
+                    : "hover:bg-[#fbfdff]"
                 }`}
                 key={claim.claim_id}
-                onClick={() => !isDemo && void handleRowSelect(claim)}
-                title={isDemo ? "Process a real claim via Intake to interact with this row" : undefined}
+                onClick={() => void handleRowSelect(claim)}
                 type="button"
               >
                 <p className="text-[13px] font-bold text-[#0053dc]">{claim.claim_id}</p>
@@ -389,13 +279,22 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
                 </div>
               </button>
             );
-          })}
+          }) : (
+            <div className="px-6 py-12 text-center">
+              <p className="text-[13px] font-semibold text-[#2a3439]">No claims have been processed yet.</p>
+              <p className="mt-2 text-[12px] text-slate-500">
+                Upload an X12 file or process a claim through Intake to populate Claims Hub.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Pagination */}
         <div className="flex items-center justify-between px-6 py-4 text-[12px] text-slate-500">
           <span>
-            Showing {currentOffset + 1}–{currentOffset + rows.length} claims
+            {rows.length
+              ? `Showing ${currentOffset + 1}–${currentOffset + rows.length} claims`
+              : "Showing 0 claims"}
           </span>
           <div className="flex items-center gap-1.5">
             <button
@@ -461,11 +360,11 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
             <div className="border-l-2 border-[#0053dc] bg-[#f7f9ff] px-4 py-3 text-[13px] leading-6 text-[#0053dc]">
               {sidebarDetail?.decision.rationale
                 ? sidebarDetail.decision.rationale
-                : activeRow?.claim_id.startsWith("#")
-                  ? "Select a live claim to load AI reasoning."
-                  : isSidebarLoading
+                : isSidebarLoading
                     ? "Loading…"
-                    : "Rationale unavailable."}
+                    : activeRow
+                      ? "Rationale unavailable."
+                      : "Select a claim from the hub to load AI reasoning."}
             </div>
           </section>
 
@@ -488,9 +387,11 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
               </div>
             ) : (
               <p className="text-[12px] text-slate-400">
-                {activeRow?.claim_id.startsWith("#") || isSidebarLoading
+                {isSidebarLoading
                   ? "—"
-                  : "No policy matches found."}
+                  : activeRow
+                    ? "No policy matches found."
+                    : "Select a claim from the hub to load policy references."}
               </p>
             )}
           </section>
@@ -517,12 +418,14 @@ export function ClaimsHubPage({ claims, selectedClaimId, filter, onFilterChange,
                 ))}
               </div>
             ) : (
-              <p className="text-[12px] text-slate-400">—</p>
+              <p className="text-[12px] text-slate-400">
+                {activeRow ? "—" : "Select a claim from the hub to load validation details."}
+              </p>
             )}
           </section>
 
           {/* Actions */}
-          {activeRow && activeRow.claim_id.startsWith("#") ? (
+          {!activeRow ? (
             <p className="rounded-sm bg-slate-50 px-4 py-3 text-center text-[11px] text-slate-400">
               Process a real claim via{" "}
               <span className="font-semibold text-[#0053dc]">Intake</span> to enable actions.

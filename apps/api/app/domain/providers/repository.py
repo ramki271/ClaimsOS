@@ -106,6 +106,36 @@ class ProvidersRepository:
         specialty: str | None = None,
     ) -> ProviderRecord:
         provider_key = provider_id or _slugify(provider_name)
+        existing_rows = (
+            execute_with_retry(
+                self.client.table("providers")
+                .select("*")
+                .eq("tenant_id", tenant_id)
+                .eq("provider_key", provider_key)
+                .limit(1)
+            ).data
+        )
+        if existing_rows:
+            existing = existing_rows[0]
+            metadata = existing.get("metadata") or {}
+            update_payload: dict[str, Any] = {}
+            if provider_name and existing.get("name") != provider_name:
+                update_payload["name"] = provider_name
+            if npi and existing.get("npi") != npi:
+                update_payload["npi"] = npi
+            if specialty and not existing.get("specialty"):
+                update_payload["specialty"] = specialty
+            if update_payload:
+                existing = (
+                    execute_with_retry(
+                        self.client.table("providers")
+                        .update(update_payload)
+                        .eq("id", existing["id"])
+                    ).data[0]
+                )
+            else:
+                existing["metadata"] = metadata
+            return self._map_provider_row(existing)
         row = (
             execute_with_retry(
                 self.client.table("providers")
@@ -115,13 +145,19 @@ class ProvidersRepository:
                         "provider_key": provider_key,
                         "npi": npi,
                         "name": provider_name,
+                        "taxonomy_code": None,
                         "specialty": specialty,
                         "network_status": "in_network",
                         "contract_tier": None,
                         "active": True,
                         "metadata": {
                             "contract_status": "active",
+                            "credential_status": "credentialed",
                             "plan_participation": [],
+                            "facility_affiliations": [],
+                            "service_locations": [],
+                            "accepting_referrals": True,
+                            "surgical_privileges": False,
                         },
                     },
                     on_conflict="tenant_id,provider_key",
@@ -162,13 +198,16 @@ class ProvidersRepository:
                         "npi": request.npi,
                         "tin": request.tin,
                         "name": request.name,
+                        "taxonomy_code": request.taxonomy_code,
                         "specialty": request.specialty,
                         "network_status": request.network_status,
                         "contract_tier": request.contract_tier,
                         "active": request.active,
                         "metadata": {
                             **request.metadata,
+                            "subspecialty": request.subspecialty,
                             "contract_status": request.contract_status,
+                            "credential_status": request.credential_status,
                             "network_effective_date": (
                                 request.network_effective_date.isoformat()
                                 if request.network_effective_date
@@ -180,6 +219,10 @@ class ProvidersRepository:
                                 else None
                             ),
                             "plan_participation": request.plan_participation,
+                            "facility_affiliations": request.facility_affiliations,
+                            "service_locations": request.service_locations,
+                            "accepting_referrals": request.accepting_referrals,
+                            "surgical_privileges": request.surgical_privileges,
                         },
                     },
                     on_conflict="tenant_id,provider_key",
@@ -194,9 +237,15 @@ class ProvidersRepository:
         return ProviderRecord(
             **base_row,
             contract_status=metadata.get("contract_status", "active"),
+            subspecialty=metadata.get("subspecialty"),
+            credential_status=metadata.get("credential_status", "credentialed"),
             network_effective_date=_parse_optional_date(metadata.get("network_effective_date")),
             network_end_date=_parse_optional_date(metadata.get("network_end_date")),
             plan_participation=list(metadata.get("plan_participation") or []),
+            facility_affiliations=list(metadata.get("facility_affiliations") or []),
+            service_locations=list(metadata.get("service_locations") or []),
+            accepting_referrals=bool(metadata.get("accepting_referrals", True)),
+            surgical_privileges=bool(metadata.get("surgical_privileges", False)),
             metadata=metadata,
         )
 

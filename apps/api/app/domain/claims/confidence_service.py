@@ -9,6 +9,10 @@ class ConfidenceService:
         "unsupported_claim_type": 0.14,
         "unsupported_form_type": 0.14,
         "missing_claim_id": 0.2,
+        "prior_auth_missing": 0.05,
+        "referral_missing": 0.05,
+        "claim_frequency_missing_reference": 0.04,
+        "required_modifier_missing": 0.05,
     }
 
     def score(self, validation: ValidationResult, decision: AdjudicationDecision) -> float:

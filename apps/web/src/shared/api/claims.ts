@@ -2,6 +2,7 @@ export type ServiceLine = {
   line_number: number;
   procedure_code: string;
   modifiers: string[];
+  diagnosis_pointers: number[];
   units: number;
   charge_amount: number;
 };
@@ -14,9 +15,27 @@ export type ClaimSubmission = {
   plan_name: string;
   member_id: string;
   member_name: string;
+  member_date_of_birth?: string | null;
+  member_gender?: "female" | "male" | "other" | "unknown" | null;
+  subscriber_relationship: "self" | "spouse" | "child" | "other";
   patient_id: string;
   provider_id: string;
   provider_name: string;
+  billing_provider_id?: string | null;
+  billing_provider_name?: string | null;
+  rendering_provider_id?: string | null;
+  rendering_provider_name?: string | null;
+  referring_provider_id?: string | null;
+  referring_provider_name?: string | null;
+  facility_name?: string | null;
+  facility_npi?: string | null;
+  prior_authorization_id?: string | null;
+  referral_id?: string | null;
+  claim_frequency_code?: string;
+  payer_claim_control_number?: string | null;
+  accident_indicator?: boolean;
+  employment_related_indicator?: boolean;
+  supporting_document_ids?: string[];
   place_of_service: string;
   diagnosis_codes: string[];
   procedure_codes: string[];
@@ -56,13 +75,21 @@ export type ClaimInsights = {
 export type ProviderAdjudicationContext = {
   provider_key: string;
   provider_name: string;
+  taxonomy_code: string | null;
   specialty: string | null;
+  subspecialty: string | null;
   network_status: string;
   contract_tier: string | null;
   contract_status: string;
+  credential_status: string;
   network_effective_date: string | null;
   network_end_date: string | null;
   participates_in_plan: boolean;
+  plan_participation: string[];
+  facility_affiliations: string[];
+  service_locations: string[];
+  accepting_referrals: boolean;
+  surgical_privileges: boolean;
   specialty_match: boolean | null;
   specialty_match_reason: string | null;
 };
@@ -74,6 +101,50 @@ export type UtilizationContext = {
   trigger_codes: string[];
   review_reason: string | null;
   notes: string[];
+};
+
+export type EligibilityContext = {
+  status: "eligible" | "manual_review" | "ineligible";
+  coverage_window: string | null;
+  notes: string[];
+};
+
+export type PriorAuthorizationVerification = {
+  required: boolean;
+  status: "not_required" | "verified" | "missing" | "manual_review";
+  authorization_id: string | null;
+  approved_units: number | null;
+  notes: string[];
+};
+
+export type ReferralVerification = {
+  required: boolean;
+  status: "not_required" | "verified" | "missing" | "manual_review";
+  referral_id: string | null;
+  notes: string[];
+};
+
+export type PricingLineResult = {
+  line_number: number;
+  procedure_code: string;
+  billed_amount: number;
+  allowed_amount: number;
+};
+
+export type PricingContext = {
+  status: "priced_in_line" | "adjusted" | "manual_review";
+  billed_amount: number;
+  allowed_amount: number;
+  adjustment_amount: number;
+  notes: string[];
+  line_results: PricingLineResult[];
+};
+
+export type PayerVerificationContext = {
+  eligibility: EligibilityContext;
+  prior_authorization: PriorAuthorizationVerification;
+  referral: ReferralVerification;
+  pricing: PricingContext;
 };
 
 export type ClaimReviewRequest = {
@@ -126,6 +197,7 @@ export type ClaimDetailResponse = {
   insights: ClaimInsights;
   provider_context: ProviderAdjudicationContext | null;
   utilization_context: UtilizationContext | null;
+  payer_verification_context: PayerVerificationContext | null;
 };
 
 export type ClaimRecordSummary = {
@@ -161,6 +233,7 @@ export type DraftServiceLine = {
   line_number: number | null;
   procedure_code: string | null;
   modifiers: string[];
+  diagnosis_pointers: number[];
   units: number | null;
   charge_amount: number | null;
 };
@@ -173,9 +246,27 @@ export type ClaimDocumentDraft = {
   plan_name: string | null;
   member_id: string | null;
   member_name: string | null;
+  member_date_of_birth?: string | null;
+  member_gender?: "female" | "male" | "other" | "unknown" | null;
+  subscriber_relationship: "self" | "spouse" | "child" | "other";
   patient_id: string | null;
   provider_id: string | null;
   provider_name: string | null;
+  billing_provider_id?: string | null;
+  billing_provider_name?: string | null;
+  rendering_provider_id?: string | null;
+  rendering_provider_name?: string | null;
+  referring_provider_id?: string | null;
+  referring_provider_name?: string | null;
+  facility_name?: string | null;
+  facility_npi?: string | null;
+  prior_authorization_id?: string | null;
+  referral_id?: string | null;
+  claim_frequency_code?: string | null;
+  payer_claim_control_number?: string | null;
+  accident_indicator?: boolean;
+  employment_related_indicator?: boolean;
+  supporting_document_ids?: string[];
   place_of_service: string | null;
   diagnosis_codes: string[];
   procedure_codes: string[];

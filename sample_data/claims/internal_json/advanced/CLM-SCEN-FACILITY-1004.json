@@ -1,0 +1,40 @@
+{
+  "claim_id": "CLM-SCEN-FACILITY-1004",
+  "claim_type": "professional_outpatient",
+  "form_type": "CMS-1500",
+  "payer_name": "Apex Health Plan",
+  "plan_name": "Apex Medicare Advantage Choice",
+  "member_id": "M-9011182",
+  "member_name": "Harold Bennett",
+  "member_date_of_birth": "1953-11-02",
+  "member_gender": "male",
+  "subscriber_relationship": "self",
+  "patient_id": "PAT-1182",
+  "provider_id": "PRV-ORTHO-200",
+  "provider_name": "Alpine Joint Institute",
+  "billing_provider_id": "PRV-ORTHO-200",
+  "billing_provider_name": "Alpine Joint Institute",
+  "rendering_provider_id": "PRV-ORTHO-200",
+  "rendering_provider_name": "Alpine Joint Institute",
+  "referring_provider_id": "PRV-PCP-9011",
+  "referring_provider_name": "Dr. Lena Ortiz",
+  "facility_name": "St. Anthony Hospital, Lakewood",
+  "prior_authorization_id": "AUTH-27447-77",
+  "referral_id": "REF-9011-ORTHO-01",
+  "claim_frequency_code": "1",
+  "place_of_service": "22",
+  "diagnosis_codes": ["M17.11"],
+  "procedure_codes": ["27447"],
+  "service_lines": [
+    {
+      "line_number": 1,
+      "procedure_code": "27447",
+      "modifiers": [],
+      "diagnosis_pointers": [1],
+      "units": 1,
+      "charge_amount": 995.0
+    }
+  ],
+  "amount": 995.0,
+  "date_of_service": "2026-04-24"
+}

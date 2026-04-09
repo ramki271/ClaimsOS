@@ -1,0 +1,136 @@
+{
+  "tenant_key": "apex-health-plan",
+  "providers": [
+    {
+      "tenant_key": "apex-health-plan",
+      "provider_key": "PRV-4092",
+      "name": "Front Range Family Medicine",
+      "npi": "1299304491",
+      "tin": "84-1234567",
+      "taxonomy_code": "207Q00000X",
+      "specialty": "Family Medicine",
+      "subspecialty": "Primary Care",
+      "network_status": "in_network",
+      "contract_tier": "Tier 1",
+      "contract_status": "active",
+      "credential_status": "credentialed",
+      "plan_participation": [
+        "Commercial PPO 500",
+        "Family Plus PPO"
+      ],
+      "facility_affiliations": [
+        "Front Range Family Medicine"
+      ],
+      "service_locations": [
+        "Denver CO"
+      ],
+      "accepting_referrals": true,
+      "surgical_privileges": false
+    },
+    {
+      "tenant_key": "apex-health-plan",
+      "provider_key": "PRV-ORTHO-100",
+      "name": "Rocky Mountain Orthopedics",
+      "npi": "1776600101",
+      "tin": "84-7712345",
+      "taxonomy_code": "207X00000X",
+      "specialty": "Orthopedic Surgery",
+      "subspecialty": "Joint Replacement",
+      "network_status": "in_network",
+      "contract_tier": "Tier 1",
+      "contract_status": "active",
+      "credential_status": "credentialed",
+      "plan_participation": [
+        "Commercial PPO 500",
+        "Commercial HMO Select",
+        "Apex Medicare Advantage Choice"
+      ],
+      "facility_affiliations": [
+        "St. Anthony Hospital, Lakewood",
+        "Summit Surgical Center"
+      ],
+      "service_locations": [
+        "Lakewood CO",
+        "Denver CO"
+      ],
+      "accepting_referrals": true,
+      "surgical_privileges": true
+    },
+    {
+      "tenant_key": "apex-health-plan",
+      "provider_key": "PRV-ORTHO-200",
+      "name": "Alpine Joint Institute",
+      "npi": "1888010202",
+      "tin": "84-8823456",
+      "taxonomy_code": "207X00000X",
+      "specialty": "Orthopedic Surgery",
+      "subspecialty": "Sports Medicine",
+      "network_status": "in_network",
+      "contract_tier": "Tier 2",
+      "contract_status": "active",
+      "credential_status": "provisional",
+      "plan_participation": [
+        "Apex Medicare Advantage Choice",
+        "Commercial PPO 500"
+      ],
+      "facility_affiliations": [
+        "Alpine Surgery Pavilion"
+      ],
+      "service_locations": [
+        "Boulder CO"
+      ],
+      "accepting_referrals": false,
+      "surgical_privileges": true
+    },
+    {
+      "tenant_key": "apex-health-plan",
+      "provider_key": "PRV-CARD-300",
+      "name": "Aurora Cardiology Partners",
+      "npi": "1667020303",
+      "tin": "84-9934567",
+      "taxonomy_code": "207RC0000X",
+      "specialty": "Cardiology",
+      "subspecialty": "Interventional Cardiology",
+      "network_status": "in_network",
+      "contract_tier": "Tier 1",
+      "contract_status": "active",
+      "credential_status": "credentialed",
+      "plan_participation": [
+        "Commercial HMO Select"
+      ],
+      "facility_affiliations": [
+        "Aurora Cardiac Center"
+      ],
+      "service_locations": [
+        "Aurora CO"
+      ],
+      "accepting_referrals": true,
+      "surgical_privileges": false
+    },
+    {
+      "tenant_key": "apex-health-plan",
+      "provider_key": "PRV-SANCTION-400",
+      "name": "Denver Advanced Procedures",
+      "npi": "1999030404",
+      "tin": "84-1145678",
+      "taxonomy_code": "207X00000X",
+      "specialty": "Orthopedic Surgery",
+      "subspecialty": "Arthroscopy",
+      "network_status": "in_network",
+      "contract_tier": "Tier 3",
+      "contract_status": "active",
+      "credential_status": "sanctioned",
+      "plan_participation": [
+        "Commercial PPO 500"
+      ],
+      "facility_affiliations": [
+        "Denver Advanced Procedures Center"
+      ],
+      "service_locations": [
+        "Denver CO"
+      ],
+      "accepting_referrals": true,
+      "surgical_privileges": true
+    }
+  ]
+}

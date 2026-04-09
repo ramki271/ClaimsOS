@@ -45,9 +45,22 @@ class X12ProfessionalClaimParser:
         plan_name = "X12 Professional Claim"
         member_id = ""
         member_name = ""
+        member_date_of_birth = None
+        member_gender = None
         patient_id = ""
         provider_id = ""
         provider_name = ""
+        billing_provider_id = ""
+        billing_provider_name = ""
+        rendering_provider_id = ""
+        rendering_provider_name = ""
+        referring_provider_id = ""
+        referring_provider_name = ""
+        prior_authorization_id = ""
+        referral_id = ""
+        payer_claim_control_number = ""
+        facility_name = ""
+        facility_npi = ""
         claims: list[ClaimSubmission] = []
         claim_state: dict[str, object] | None = None
         current_line: _LineDraft | None = None
@@ -60,6 +73,8 @@ class X12ProfessionalClaimParser:
 
         def finalize_claim() -> None:
             nonlocal claim_state, current_line
+            nonlocal prior_authorization_id, referral_id, payer_claim_control_number
+            nonlocal facility_name, facility_npi
             if claim_state is None:
                 return
             flush_current_line()
@@ -70,9 +85,23 @@ class X12ProfessionalClaimParser:
                     plan_name=claim_state["plan_name"],
                     member_id=member_id,
                     member_name=member_name,
+                    member_date_of_birth=member_date_of_birth,
+                    member_gender=member_gender,
                     patient_id=patient_id,
                     provider_id=provider_id,
                     provider_name=provider_name,
+                    billing_provider_id=billing_provider_id,
+                    billing_provider_name=billing_provider_name,
+                    rendering_provider_id=rendering_provider_id,
+                    rendering_provider_name=rendering_provider_name,
+                    referring_provider_id=referring_provider_id,
+                    referring_provider_name=referring_provider_name,
+                    facility_name=facility_name,
+                    facility_npi=facility_npi,
+                    prior_authorization_id=prior_authorization_id,
+                    referral_id=referral_id,
+                    payer_claim_control_number=payer_claim_control_number,
+                    claim_frequency_code=claim_state["claim_frequency_code"],
                     place_of_service=claim_state["place_of_service"],
                     diagnosis_codes=claim_state["diagnosis_codes"],
                     service_lines=claim_state["service_lines"],
@@ -81,6 +110,11 @@ class X12ProfessionalClaimParser:
                 )
             )
             claim_state = None
+            prior_authorization_id = ""
+            referral_id = ""
+            payer_claim_control_number = ""
+            facility_name = ""
+            facility_npi = ""
 
         for parts in segments:
             tag = parts[0]
@@ -91,14 +125,19 @@ class X12ProfessionalClaimParser:
                 claim_amount = Decimal(self._required(parts, 2, "CLM02 total charge amount"))
                 pos = self._safe(parts, 5)
                 place_of_service = "11"
+                claim_frequency_code = "1"
                 if pos and ":" in pos:
-                    place_of_service = pos.split(":")[0] or place_of_service
+                    pieces = pos.split(":")
+                    place_of_service = pieces[0] or place_of_service
+                    if len(pieces) >= 3 and pieces[2]:
+                        claim_frequency_code = pieces[2]
                 elif pos:
                     place_of_service = pos
                 claim_state = {
                     "claim_id": claim_id,
                     "claim_amount": claim_amount,
                     "place_of_service": place_of_service,
+                    "claim_frequency_code": claim_frequency_code,
                     "diagnosis_codes": [],
                     "service_lines": [],
                     "claim_date_of_service": None,
@@ -113,15 +152,43 @@ class X12ProfessionalClaimParser:
                 elif entity == "QC":
                     patient_id = self._safe(parts, 9) or patient_id
                 elif entity in {"82", "85"}:
-                    provider_name = self._org_or_person_name(parts)
-                    provider_id = self._safe(parts, 9) or provider_id
+                    name = self._org_or_person_name(parts)
+                    identifier = self._safe(parts, 9)
+                    if entity == "85":
+                        billing_provider_name = name
+                        billing_provider_id = identifier or billing_provider_id
+                    else:
+                        rendering_provider_name = name
+                        rendering_provider_id = identifier or rendering_provider_id
+                    provider_name = rendering_provider_name or billing_provider_name or name
+                    provider_id = rendering_provider_id or billing_provider_id or identifier or provider_id
+                elif entity == "DN":
+                    referring_provider_name = self._org_or_person_name(parts)
+                    referring_provider_id = self._safe(parts, 9) or referring_provider_id
+                elif entity == "77":
+                    facility_name = self._org_or_person_name(parts) or facility_name
+                    facility_npi = self._safe(parts, 9) or facility_npi
                 elif entity == "PR":
                     payer_name = self._org_or_person_name(parts)
+            elif tag == "DMG":
+                raw_dob = self._safe(parts, 2)
+                member_date_of_birth = self._normalize_date(raw_dob) if raw_dob else member_date_of_birth
+                gender_map = {"F": "female", "M": "male", "O": "other", "U": "unknown"}
+                member_gender = gender_map.get(self._safe(parts, 3).upper(), member_gender)
 
             elif tag == "SBR":
                 plan_name = self._safe(parts, 3) or plan_name
                 if claim_state is not None:
                     claim_state["plan_name"] = plan_name
+            elif tag == "REF":
+                qualifier = self._safe(parts, 1)
+                ref_value = self._safe(parts, 2)
+                if qualifier == "G1":
+                    prior_authorization_id = ref_value or prior_authorization_id
+                elif qualifier == "9F":
+                    referral_id = ref_value or referral_id
+                elif qualifier == "F8":
+                    payer_claim_control_number = ref_value or payer_claim_control_number
 
             elif tag == "HI":
                 if claim_state is not None:
@@ -170,9 +237,23 @@ class X12ProfessionalClaimParser:
         plan_name: str,
         member_id: str,
         member_name: str,
+        member_date_of_birth: str | None,
+        member_gender: str | None,
         patient_id: str,
         provider_id: str,
         provider_name: str,
+        billing_provider_id: str,
+        billing_provider_name: str,
+        rendering_provider_id: str,
+        rendering_provider_name: str,
+        referring_provider_id: str,
+        referring_provider_name: str,
+        facility_name: str,
+        facility_npi: str,
+        prior_authorization_id: str,
+        referral_id: str,
+        payer_claim_control_number: str,
+        claim_frequency_code: str,
         place_of_service: str,
         diagnosis_codes: list[str],
         service_lines: list[_LineDraft],
@@ -212,9 +293,23 @@ class X12ProfessionalClaimParser:
             plan_name=self._normalize_label(plan_name or "X12 Professional Claim"),
             member_id=member_id or patient_id or claim_id,
             member_name=self._normalize_label(member_name),
+            member_date_of_birth=self._normalize_date(member_date_of_birth) if member_date_of_birth else None,
+            member_gender=member_gender,
             patient_id=patient_id or member_id or claim_id,
             provider_id=provider_id or "UNKNOWN-PROVIDER",
             provider_name=self._normalize_label(provider_name),
+            billing_provider_id=billing_provider_id or provider_id or "UNKNOWN-PROVIDER",
+            billing_provider_name=self._normalize_label(billing_provider_name or provider_name),
+            rendering_provider_id=rendering_provider_id or provider_id or billing_provider_id or "UNKNOWN-PROVIDER",
+            rendering_provider_name=self._normalize_label(rendering_provider_name or provider_name or billing_provider_name),
+            referring_provider_id=referring_provider_id or None,
+            referring_provider_name=self._normalize_label(referring_provider_name) if referring_provider_name else None,
+            facility_name=self._normalize_label(facility_name) if facility_name else None,
+            facility_npi=facility_npi or None,
+            prior_authorization_id=prior_authorization_id or None,
+            referral_id=referral_id or None,
+            claim_frequency_code=claim_frequency_code or "1",
+            payer_claim_control_number=payer_claim_control_number or None,
             place_of_service=place_of_service,
             diagnosis_codes=diagnosis_codes,
             procedure_codes=[line.procedure_code for line in normalized_lines],

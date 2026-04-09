@@ -85,6 +85,7 @@ class ClaimDocumentIntakeService:
                     line_number=line.line_number or index,
                     procedure_code=line.procedure_code or "",
                     modifiers=line.modifiers or [],
+                    diagnosis_pointers=line.diagnosis_pointers or [],
                     units=line.units or 1,
                     charge_amount=line.charge_amount or 0.0,
                 )
@@ -104,9 +105,27 @@ class ClaimDocumentIntakeService:
             plan_name=draft.plan_name or "",
             member_id=draft.member_id or "",
             member_name=draft.member_name or "",
+            member_date_of_birth=draft.member_date_of_birth,
+            member_gender=draft.member_gender,
+            subscriber_relationship=draft.subscriber_relationship,
             patient_id=draft.patient_id or draft.member_id or "",
-            provider_id=draft.provider_id or "",
-            provider_name=draft.provider_name or "",
+            provider_id=draft.rendering_provider_id or draft.provider_id or draft.billing_provider_id or "",
+            provider_name=draft.rendering_provider_name or draft.provider_name or draft.billing_provider_name or "",
+            billing_provider_id=draft.billing_provider_id or draft.provider_id or "",
+            billing_provider_name=draft.billing_provider_name or draft.provider_name or "",
+            rendering_provider_id=draft.rendering_provider_id or draft.provider_id or draft.billing_provider_id or "",
+            rendering_provider_name=draft.rendering_provider_name or draft.provider_name or draft.billing_provider_name or "",
+            referring_provider_id=draft.referring_provider_id,
+            referring_provider_name=draft.referring_provider_name,
+            facility_name=draft.facility_name,
+            facility_npi=draft.facility_npi,
+            prior_authorization_id=draft.prior_authorization_id,
+            referral_id=draft.referral_id,
+            claim_frequency_code=draft.claim_frequency_code or "1",
+            payer_claim_control_number=draft.payer_claim_control_number,
+            accident_indicator=draft.accident_indicator,
+            employment_related_indicator=draft.employment_related_indicator,
+            supporting_document_ids=draft.supporting_document_ids,
             place_of_service=draft.place_of_service or "11",
             diagnosis_codes=draft.diagnosis_codes,
             procedure_codes=procedure_codes,
@@ -188,13 +207,29 @@ class ClaimDocumentIntakeService:
             '    "plan_name": string|null,\n'
             '    "member_id": string|null,\n'
             '    "member_name": string|null,\n'
+            '    "member_date_of_birth": "YYYY-MM-DD"|null,\n'
+            '    "member_gender": "female|male|other|unknown"|null,\n'
+            '    "subscriber_relationship": "self|spouse|child|other",\n'
             '    "patient_id": string|null,\n'
             '    "provider_id": string|null,\n'
             '    "provider_name": string|null,\n'
+            '    "billing_provider_id": string|null,\n'
+            '    "billing_provider_name": string|null,\n'
+            '    "rendering_provider_id": string|null,\n'
+            '    "rendering_provider_name": string|null,\n'
+            '    "referring_provider_id": string|null,\n'
+            '    "referring_provider_name": string|null,\n'
+            '    "facility_name": string|null,\n'
+            '    "facility_npi": string|null,\n'
+            '    "prior_authorization_id": string|null,\n'
+            '    "referral_id": string|null,\n'
+            '    "claim_frequency_code": string|null,\n'
+            '    "payer_claim_control_number": string|null,\n'
+            '    "supporting_document_ids": [string],\n'
             '    "place_of_service": string|null,\n'
             '    "diagnosis_codes": [string],\n'
             '    "procedure_codes": [string],\n'
-            '    "service_lines": [{"line_number": number|null, "procedure_code": string|null, "modifiers": [string], "units": number|null, "charge_amount": number|null}],\n'
+            '    "service_lines": [{"line_number": number|null, "procedure_code": string|null, "modifiers": [string], "diagnosis_pointers": [number], "units": number|null, "charge_amount": number|null}],\n'
             '    "amount": number|null,\n'
             '    "date_of_service": "YYYY-MM-DD"|null\n'
             "  }\n"
@@ -222,6 +257,10 @@ class ClaimDocumentIntakeService:
             "plan_name": draft.plan_name,
             "member_id": draft.member_id,
             "member_name": draft.member_name,
+            "billing_provider_id": draft.billing_provider_id,
+            "billing_provider_name": draft.billing_provider_name,
+            "rendering_provider_id": draft.rendering_provider_id,
+            "rendering_provider_name": draft.rendering_provider_name,
             "provider_id": draft.provider_id,
             "provider_name": draft.provider_name,
             "amount": draft.amount,
