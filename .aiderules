@@ -1,0 +1,106 @@
+# ClaimsOS – Project Intelligence
+
+## Critical Patterns
+
+### Backend
+- All services are plain Python classes instantiated directly (no FastAPI DI for services, only for repositories)
+- `ClaimsRepository` is the central persistence class — it also builds provider context and insights
+- Claims are **upserted** on `claim_id` — re-processing the same ID updates the record
+- `_run_claim_processing()` in `claims.py` router is the canonical pipeline function — all three intake paths (JSON, X12, document) funnel through it
+- `ensure_tenant()` and `ensure_provider_for_tenant()` auto-provision records on first encounter — never assume they exist
+- `execute_with_retry()` wraps all Supabase calls — always use it, never call `.execute()` directly
+- Agent chat always returns HTTP 200 — never raise 4xx for question failures
+
+### Frontend
+- All application state lives in `App.tsx` — no Redux, no Zustand, no React Router
+- View switching is via `activeView` state variable (type `ViewId`) — conditional rendering, not routing
+- All API calls are made from `App.tsx` handler functions and passed as props to page components
+- The `AgentChatWidget` is rendered outside `AppShell` so it floats over all views
+
+### Design System ("Surgical Ledger")
+- Base surface: `#F7F9FB` (surface), containers: `#F0F4F7` (low), `#FFFFFF` (lowest/focus)
+- Primary action color: `#0053DC` (secondary) — use gradient `#0053DC` → `#0049C2` for CTAs
+- **NEVER use 1px borders for structural sectioning** — use tonal background shifts instead
+- **NEVER use full rounded pills** — use 4px (DEFAULT) or 6px (md) border radius
+- **NEVER use #000000** — use `#2A3439` (on-surface) for text
+- Fonts: Manrope for headlines/display, Inter for data/UI
+- Status chips: `primary-container` for neutral, `error-container` for denials
+- Glassmorphism for floating modals: `surface-container-lowest` at 85% opacity + 12px backdrop-blur
+
+## Domain Knowledge
+
+### Claim Processing Rules
+- Straight-through approval requires: POS=11, single service line, amount ≤ $250
+- Amount > $1000 triggers hard denial guardrail
+- Provider ID starting with "ZZ" = eligibility mismatch (test pattern)
+- HMO plans require referral for specialist codes: 99244, 99245, 27447, 93000
+- Prior auth required codes: 27447, 29881, 45385, 70553
+- Required modifiers: 93000 needs modifier 25, 29881 needs modifier 59
+- Supported CPT/ICD pairs (8 total): E11.9/99213, I10/99213, J02.9/99213, M54.5/97110, M17.11/27447, M17.11/29881, R51.9/99214, I25.10/93000
+
+### Confidence Score Thresholds
+- Human review triggered when: `confidence_score < 0.72` OR `outcome == "review"`
+- Approve path: starts at 0.90, max ~0.98
+- Review path: starts at 0.70, min 0.46
+- Denial path: starts at 0.50, min 0.14
+
+### Multi-Tenancy
+- Tenant key is derived from payer name (slugified)
+- Demo tenant: "Apex Health Plan" → tenant_key: "apex-health-plan"
+- OpenAI vector store per tenant: `claimsos-policies-{tenant_key}`
+
+## File Locations Quick Reference
+
+### Backend Key Files
+- Pipeline entry: `apps/api/app/api/v1/routes/claims.py` → `_run_claim_processing()`
+- Claim models: `apps/api/app/domain/claims/models.py`
+- Validation rules: `apps/api/app/domain/claims/validation_service.py`
+- Adjudication checks: `apps/api/app/domain/claims/adjudication_service.py`
+- Confidence scoring: `apps/api/app/domain/claims/confidence_service.py`
+- Policy RAG: `apps/api/app/domain/policies/retrieval_service.py`
+- X12 parser: `apps/api/app/domain/claims/x12_parser.py`
+- Document intake: `apps/api/app/domain/claims/document_intake_service.py`
+- Agent chat: `apps/api/app/domain/agent/service.py`
+- Config: `apps/api/app/core/config.py`
+
+### Frontend Key Files
+- App state + routing: `apps/web/src/app/App.tsx`
+- Claims API: `apps/web/src/shared/api/claims.ts`
+- Intake page: `apps/web/src/features/intake/components/IntakePolicyPage.tsx`
+- Adjudication page: `apps/web/src/features/adjudication/components/AdjudicationPage.tsx`
+- Agent widget: `apps/web/src/features/agent/components/AgentChatWidget.tsx`
+- App shell: `apps/web/src/shared/layout/AppShell.tsx` (or similar)
+
+### Database Migrations
+- `infra/supabase/001_initial_claimsos.sql` – Core claims tables
+- `infra/supabase/002_tenant_provider_foundation.sql` – Tenants + providers
+- `infra/supabase/003_policy_ingestion_foundation.sql` – Policy documents + chunks
+- `infra/supabase/004_openai_vector_store_foundation.sql` – OpenAI vector store metadata
+- `infra/supabase/005_detailed_claim_phase1.sql` – Extended claim fields
+- `infra/supabase/006_members_foundation.sql` – Members table
+
+### Sample Data
+- Hero OCR scenario: `sample_data/claim_documents/APX-OCR-HERO-ORTHO-3001.*`
+- Policy documents: `sample_data/policies/*.md`
+- X12 batch: `sample_data/claims/apex_bulk_realistic_5_claims.x12`
+- JSON scenarios: `sample_data/claims/internal_json/advanced/*.json`
+
+## Build & Run Commands
+```bash
+# Backend
+cd apps/api && uvicorn app.main:app --reload
+
+# Frontend
+cd apps/web && npm run dev
+
+# Frontend build check
+cd apps/web && npm run build
+```
+
+## Current Active Task
+Improve AI Document Intake UI in `IntakePolicyPage.tsx` to be a document-intelligence workstation:
+- Side-by-side: document preview (left) + extracted draft (right)
+- Highlight missing fields, low-confidence fields, review notes
+- Support APX-OCR-HERO-ORTHO-3001 orthopedic scenario
+- Show missing prior auth callout explicitly
+- Show readiness-to-process indicator
