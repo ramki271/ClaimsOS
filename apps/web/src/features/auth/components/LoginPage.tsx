@@ -28,6 +28,11 @@ const features = [
     label: "Confidence-Gated Review",
     sub: "Human-in-the-loop escalation for low-confidence decisions",
   },
+  {
+    icon: "groups",
+    label: "Member & Provider Intelligence",
+    sub: "Eligibility, network status, and provider credentialing at adjudication time",
+  },
 ];
 
 export function LoginPage({ onLogin }: Props) {
